@@ -1,0 +1,23 @@
+{
+  "name": "gas-crm",
+  "version": "1.0.0",
+  "description": "Google Apps Script CRM System",
+  "scripts": {
+    "push": "clasp push",
+    "pull": "clasp pull",
+    "open": "clasp open",
+    "deploy": "clasp deploy",
+    "logs": "clasp logs"
+  },
+  "keywords": [
+    "gas",
+    "google-apps-script",
+    "crm"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@google/clasp": "^2.4.2"
+  }
+}
+

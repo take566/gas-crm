@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 10px; }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; font-weight: bold; }
+    input, textarea, select { width: 100%; padding: 8px; box-sizing: border-box; }
+    button { 
+      background-color: #4285f4; 
+      color: white; 
+      padding: 10px 20px; 
+      border: none; 
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    button:hover { background-color: #357abd; }
+    .cancel { background-color: #888; }
+  </style>
+</head>
+<body>
+  <div class="form-group">
+    <label>名前 *</label>
+    <input type="text" id="name" required>
+  </div>
+  <div class="form-group">
+    <label>会社ID（直接入力可）</label>
+    <input type="text" id="companyId" placeholder="C001 など（空欄可）">
+    <small style="color: #666; font-size: 11px;">または下のプルダウンから選択</small>
+  </div>
+  <div class="form-group">
+    <label>会社（プルダウンから選択）</label>
+    <select id="companySelect">
+      <option value="">-- 選択してください（空欄可） --</option>
+    </select>
+  </div>
+  <div class="form-group">
+    <label>メールアドレス</label>
+    <input type="email" id="email">
+  </div>
+  <div class="form-group">
+    <label>電話番号</label>
+    <input type="text" id="phone">
+  </div>
+  <div class="form-group">
+    <label>備考</label>
+    <textarea id="note" rows="2"></textarea>
+  </div>
+  <button onclick="submitForm()">追加</button>
+  <button class="cancel" onclick="google.script.host.close()">キャンセル</button>
+
+  <script>
+    // ページ読み込み時に会社リストを読み込み
+    // Google Apps Script の HTML ダイアログでは window.onload が確実に動作しない場合があるため、
+    // スクリプトの最後で直接実行
+    (function() {
+      loadCompanies();
+    })();
+    
+    function loadCompanies() {
+      try {
+        const select = document.getElementById('companySelect');
+        if (!select) {
+          console.error('companySelect 要素が見つかりません');
+          return;
+        }
+        
+        // 読み込み中表示
+        const loadingOption = document.createElement('option');
+        loadingOption.value = '';
+        loadingOption.text = '-- 読み込み中... --';
+        loadingOption.disabled = true;
+        select.appendChild(loadingOption);
+        
+        // 会社リストを読み込み
+        google.script.run
+          .withSuccessHandler(function(companies) {
+            try {
+              // 既存のオプションをクリア
+              select.innerHTML = '<option value="">-- 選択してください（空欄可） --</option>';
+              
+              if (companies && Array.isArray(companies) && companies.length > 0) {
+                companies.forEach(function(c) {
+                  try {
+                    if (c && c.id && c.name) {
+                      const option = document.createElement('option');
+                      option.value = String(c.id);
+                      option.text = String(c.name) + ' (' + String(c.id) + ')';
+                      select.appendChild(option);
+                    }
+                  } catch (e) {
+                    console.error('会社オプション追加エラー:', e, c);
+                  }
+                });
+              } else {
+                // 会社が登録されていない場合のメッセージ
+                const option = document.createElement('option');
+                option.value = '';
+                option.text = '-- 会社が登録されていません --';
+                option.disabled = true;
+                select.appendChild(option);
+              }
+            } catch (e) {
+              console.error('会社リスト処理エラー:', e);
+              select.innerHTML = '<option value="">-- 選択してください（空欄可） --</option>';
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.error('会社リストの取得エラー:', error);
+            const select = document.getElementById('companySelect');
+            if (select) {
+              select.innerHTML = '<option value="">-- 選択してください（空欄可） --</option>';
+              const option = document.createElement('option');
+              option.value = '';
+              option.text = '-- 会社リストを取得できませんでした（会社IDを直接入力してください） --';
+              option.disabled = true;
+              select.appendChild(option);
+            }
+          })
+          .getCompanies();
+      } catch (e) {
+        console.error('loadCompanies エラー:', e);
+      }
+    }
+
+    // プルダウン選択時に会社ID入力欄に反映
+    document.getElementById('companySelect').addEventListener('change', function() {
+      const select = document.getElementById('companySelect');
+      const companyIdInput = document.getElementById('companyId');
+      if (select.value) {
+        companyIdInput.value = select.value;
+      }
+    });
+
+    // 会社ID入力欄が変更されたらプルダウンをクリア
+    document.getElementById('companyId').addEventListener('input', function() {
+      const companyIdInput = document.getElementById('companyId');
+      const select = document.getElementById('companySelect');
+      // 手動入力された場合はプルダウンをリセット
+      if (companyIdInput.value && select.value !== companyIdInput.value) {
+        select.value = '';
+      }
+    });
+
+    function submitForm() {
+      const name = document.getElementById('name').value;
+      if (!name) {
+        alert('名前を入力してください');
+        return;
+      }
+      
+      // 会社IDは直接入力欄を優先（空欄でも可）
+      let companyId = document.getElementById('companyId').value.trim();
+      // 直接入力が空で、プルダウンが選択されている場合はプルダウンの値を使用
+      if (!companyId) {
+        companyId = document.getElementById('companySelect').value;
+      }
+      
+      const email = document.getElementById('email').value;
+      const phone = document.getElementById('phone').value;
+      const note = document.getElementById('note').value;
+      
+      google.script.run
+        .withSuccessHandler(function(id) {
+          alert('顧客を追加しました（ID: ' + id + '）');
+          google.script.host.close();
+        })
+        .withFailureHandler(function(err) {
+          alert('エラー: ' + err);
+        })
+        .addCustomer(name, companyId, email, phone, note);
+    }
+  </script>
+</body>
+</html>
+

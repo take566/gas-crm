@@ -1,0 +1,25 @@
+# Clasp
+.clasp.json
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+pnpm-lock.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 一時ファイル
+*.tmp
+*.log
+
+# ドキュメント（オプション：含めたい場合は削除）
+# docs/

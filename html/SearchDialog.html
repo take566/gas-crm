@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 10px; }
+    .search-box { margin-bottom: 15px; }
+    input { padding: 8px; width: 70%; }
+    button { 
+      background-color: #4285f4; 
+      color: white; 
+      padding: 8px 15px; 
+      border: none; 
+      cursor: pointer;
+    }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
+    th { background-color: #4285f4; color: white; }
+    tr:nth-child(even) { background-color: #f9f9f9; }
+    .no-result { color: #888; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <div class="search-box">
+    <input type="text" id="keyword" placeholder="名前・会社名・メールで検索">
+    <button onclick="search()">検索</button>
+  </div>
+  <div id="results"></div>
+
+  <script>
+    function search() {
+      const keyword = document.getElementById('keyword').value;
+      if (!keyword) {
+        alert('検索キーワードを入力してください');
+        return;
+      }
+      
+      google.script.run
+        .withSuccessHandler(function(customers) {
+          const div = document.getElementById('results');
+          if (customers.length === 0) {
+            div.innerHTML = '<p class="no-result">該当する顧客が見つかりませんでした</p>';
+            return;
+          }
+          
+          let html = '<table><tr><th>ID</th><th>名前</th><th>会社</th><th>メール</th></tr>';
+          customers.forEach(function(c) {
+            html += '<tr><td>' + c.id + '</td><td>' + c.name + '</td><td>' + c.companyName + '</td><td>' + c.email + '</td></tr>';
+          });
+          html += '</table>';
+          div.innerHTML = html;
+        })
+        .searchCustomers(keyword);
+    }
+  </script>
+</body>
+</html>
+
+

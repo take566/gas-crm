@@ -1,0 +1,31 @@
+# Clasp ignore file
+# このファイルに記載されたファイル/ディレクトリは clasp push でアップロードされません
+
+# ドキュメントファイル
+*.md
+docs/
+
+# Git関連
+.git/
+.gitignore
+
+# Node modules（完全に除外）
+node_modules/
+**/node_modules/**
+
+# パッケージ管理ファイル
+package.json
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# その他の設定ファイル
+.claspignore
+.clasp.json
+
+# 一時ファイル
+*.tmp
+*.log
+
+# HTMLファイルフォルダ（明示的に含める）
+!html/**

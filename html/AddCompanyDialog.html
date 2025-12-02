@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 10px; }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; font-weight: bold; }
+    input, textarea { width: 100%; padding: 8px; box-sizing: border-box; }
+    button { 
+      background-color: #4285f4; 
+      color: white; 
+      padding: 10px 20px; 
+      border: none; 
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    button:hover { background-color: #357abd; }
+    .cancel { background-color: #888; }
+  </style>
+</head>
+<body>
+  <div class="form-group">
+    <label>会社名 *</label>
+    <input type="text" id="name" required>
+  </div>
+  <div class="form-group">
+    <label>住所</label>
+    <input type="text" id="address">
+  </div>
+  <div class="form-group">
+    <label>電話番号</label>
+    <input type="text" id="phone">
+  </div>
+  <div class="form-group">
+    <label>備考</label>
+    <textarea id="note" rows="3"></textarea>
+  </div>
+  <button onclick="submitForm()">追加</button>
+  <button class="cancel" onclick="google.script.host.close()">キャンセル</button>
+
+  <script>
+    function submitForm() {
+      const name = document.getElementById('name').value;
+      if (!name) {
+        alert('会社名を入力してください');
+        return;
+      }
+      const address = document.getElementById('address').value;
+      const phone = document.getElementById('phone').value;
+      const note = document.getElementById('note').value;
+      
+      google.script.run
+        .withSuccessHandler(function(id) {
+          alert('会社を追加しました（ID: ' + id + '）');
+          google.script.host.close();
+        })
+        .withFailureHandler(function(err) {
+          alert('エラー: ' + err);
+        })
+        .addCompany(name, address, phone, note);
+    }
+  </script>
+</body>
+</html>
+
+

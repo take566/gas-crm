@@ -12,7 +12,7 @@ Google スプレッドシートと Google Apps Script を使用して、会社�
 - 顧客情報の管理（顧客ID自動採番: P001, P002...）
 - 会社と顧客の紐付け
 - 顧客検索機能
-- ID割り当て機能（欠番の補完）
+- 未採番行への ID 割り当て（既存 ID の最大値の次から連番。**欠番は埋めません**）
 
 ## プロジェクト構成
 
@@ -29,11 +29,13 @@ crm/
 │       ├── AddCompanyDialog.html
 │       ├── AddCustomerDialog.html
 │       └── SearchDialog.html
+├── tests/                       # push 対象外
+│   └── local-harness.mjs        # GAS API をスタブしたロジック検証（npm test）
 ├── docs/                        # ドキュメント（push 対象外）
 │   ├── gas-crm-implementation-guide.md
 │   ├── AGENTS.md
 │   └── CLAUDE.md
-├── .clasp.json                  # Clasp設定（rootDir: src）
+├── .clasp.json                  # Clasp設定（rootDir: src、gitignore 対象）
 ├── .claspignore
 └── package.json                 # Node.js設定
 ```
@@ -53,27 +55,52 @@ html/AddCompanyDialog / html/AddCustomerDialog / html/SearchDialog
 
 ### 1. 必要なツール
 
-- [clasp](https://github.com/google/clasp) - Google Apps Script のコマンドラインツール
-- Node.js (オプション)
+- Node.js
+- [clasp](https://github.com/google/clasp) — `npm install` で devDependency として入ります
 
 ### 2. インストール
 
 ```bash
-# claspのインストール
-npm install -g @google/clasp
-
-# 依存関係のインストール（オプション）
 npm install
 ```
 
 ### 3. 認証とプロジェクトのリンク
 
 ```bash
-# Googleアカウントでログイン
-clasp login
+npx clasp login
+```
 
-# 既存のプロジェクトにリンク（.clasp.jsonにscriptIdが設定されている場合）
-clasp push
+`.clasp.json` は `scriptId` が環境ごとに異なるため **git 管理外**です（`.gitignore`）。
+clone 直後は存在しないので、次のどちらかで用意します。
+
+**A. 既存の Apps Script プロジェクトに繋ぐ**
+
+スクリプトエディタの URL `https://script.google.com/.../projects/<scriptId>/edit` から
+`scriptId` を控えて、リポジトリ直下に `.clasp.json` を作成します。
+
+```json
+{
+  "scriptId": "ここに scriptId",
+  "rootDir": "src"
+}
+```
+
+**B. 新規に作る**
+
+```bash
+# CRM 用スプレッドシートを開き、拡張機能 → Apps Script でプロジェクトを作ってから A の手順
+# もしくはコンテナバインドで新規作成
+npx clasp create --type sheets --rootDir src
+```
+
+`rootDir` は必ず `src` にしてください（`.` にすると直下のファイルまで push されます）。
+
+### 4. 動作確認とアップロード
+
+```bash
+npm test            # シートに触らないローカル検証
+npx clasp status    # 送信されるファイル一覧を確認
+npx clasp push
 ```
 
 ## 使用方法
@@ -81,12 +108,19 @@ clasp push
 ### コードのアップロード
 
 ```bash
-# ローカルのコードをGASプロジェクトにアップロード
-clasp push
-
-# GASプロジェクトからコードをダウンロード
-clasp pull
+npx clasp push      # ローカル → GAS
+npx clasp pull      # GAS → ローカル
 ```
+
+### テスト
+
+```bash
+npm test
+```
+
+`tests/local-harness.mjs` が GAS API をスタブして `src/*.gs` を Node で実行し、
+列マッピング・セル値の正規化・会社ID による結合・採番を検証します。
+実 GAS 環境の代替ではありません（UI・権限・同時実行は再現しません）。
 
 ### スプレッドシートでの操作
 

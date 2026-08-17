@@ -1,11 +1,18 @@
 # Clasp
+# scriptId は環境ごとに異なるため追跡しない。
+# clone 直後の作り方は README「3. 認証とプロジェクトのリンク」を参照。
 .clasp.json
 
 # Node
 node_modules/
 npm-debug.log
 yarn-error.log
+
+# ロックファイルは追跡しない。
+# 実行時の依存はゼロ（GAS 上で動くコードは npm パッケージを使わない）で、
+# devDependency は clasp のみ。再現性より差分の静けさを優先する。
 pnpm-lock.yaml
+package-lock.json
 
 # OS
 .DS_Store

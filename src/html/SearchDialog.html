@@ -18,37 +18,85 @@
     th { background-color: #4285f4; color: white; }
     tr:nth-child(even) { background-color: #f9f9f9; }
     .no-result { color: #888; margin-top: 20px; }
+    .error { color: #c5221f; margin-top: 20px; }
+    button:disabled { background-color: #aaa; cursor: default; }
   </style>
 </head>
 <body>
   <div class="search-box">
     <input type="text" id="keyword" placeholder="名前・会社名・メールで検索">
-    <button onclick="search()">検索</button>
+    <button id="searchButton" onclick="search()">検索</button>
   </div>
   <div id="results"></div>
 
   <script>
+    // 検索結果はスプレッドシートの生データなので、DOM API で組み立てて
+    // 文字列連結による innerHTML を避ける（備考や会社名に < や & が入っても崩れない）
+    function renderResults(customers) {
+      const div = document.getElementById('results');
+      div.textContent = '';
+
+      if (!customers || customers.length === 0) {
+        const p = document.createElement('p');
+        p.className = 'no-result';
+        p.textContent = '該当する顧客が見つかりませんでした';
+        div.appendChild(p);
+        return;
+      }
+
+      const table = document.createElement('table');
+      const headerRow = document.createElement('tr');
+      ['ID', '名前', '会社', 'メール'].forEach(function(label) {
+        const th = document.createElement('th');
+        th.textContent = label;
+        headerRow.appendChild(th);
+      });
+      table.appendChild(headerRow);
+
+      customers.forEach(function(c) {
+        const tr = document.createElement('tr');
+        [c.id, c.name, c.companyName, c.email].forEach(function(value) {
+          const td = document.createElement('td');
+          td.textContent = value == null ? '' : String(value);
+          tr.appendChild(td);
+        });
+        table.appendChild(tr);
+      });
+
+      div.appendChild(table);
+    }
+
+    function renderError(error) {
+      const div = document.getElementById('results');
+      div.textContent = '';
+      const p = document.createElement('p');
+      p.className = 'error';
+      p.textContent = '検索に失敗しました: ' + (error && error.message ? error.message : String(error));
+      div.appendChild(p);
+    }
+
+    function setSearching(isSearching) {
+      document.getElementById('searchButton').disabled = isSearching;
+    }
+
     function search() {
       const keyword = document.getElementById('keyword').value;
       if (!keyword) {
         alert('検索キーワードを入力してください');
         return;
       }
-      
+
+      setSearching(true);
       google.script.run
         .withSuccessHandler(function(customers) {
-          const div = document.getElementById('results');
-          if (customers.length === 0) {
-            div.innerHTML = '<p class="no-result">該当する顧客が見つかりませんでした</p>';
-            return;
-          }
-          
-          let html = '<table><tr><th>ID</th><th>名前</th><th>会社</th><th>メール</th></tr>';
-          customers.forEach(function(c) {
-            html += '<tr><td>' + c.id + '</td><td>' + c.name + '</td><td>' + c.companyName + '</td><td>' + c.email + '</td></tr>';
-          });
-          html += '</table>';
-          div.innerHTML = html;
+          setSearching(false);
+          renderResults(customers);
+        })
+        // failureHandler が無いとサーバ側の例外が握り潰され、
+        // 「検索ボタンを押しても何も起きない」という症状になる
+        .withFailureHandler(function(error) {
+          setSearching(false);
+          renderError(error);
         })
         .searchCustomers(keyword);
     }

@@ -159,5 +159,23 @@ section('#3-7 補助関数');
   check('空キーワードは空配列', ctx.searchCustomers('   '), []);
 }
 
+// ---------------------------------------------------------------- 8
+section('#4 searchCustomers はサーバ側で例外を握り潰さない');
+{
+  const { ctx, logs } = makeEnv({
+    '会社': [COMPANY_HEADER, ['C001', 'A社', '', '', '', '']],
+    '顧客': [CUSTOMER_HEADER, ['P001', '山田', 'C001', '', '', '', '']]
+  });
+  check('正常時は結果を返す', ctx.searchCustomers('山田').map(c => c.id), ['P001']);
+
+  // 将来 getCustomers が例外を投げるようになった場合に、[] で握り潰さず
+  // クライアントの withFailureHandler へ届くこと
+  ctx.getCustomers = () => { throw new Error('boom'); };
+  let message = null;
+  try { ctx.searchCustomers('山田'); } catch (e) { message = e.message; }
+  check('例外がクライアントへ投げ返される', message, '顧客の検索に失敗しました: Error: boom');
+  check('ログにも残る', logs.some(l => l.indexOf('searchCustomers エラー') === 0), true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

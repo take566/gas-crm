@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Google Apps Script CRM System",
   "scripts": {
+    "test": "node tests/local-harness.mjs",
     "push": "clasp push",
     "pull": "clasp pull",
     "open": "clasp open",

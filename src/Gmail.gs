@@ -115,6 +115,13 @@ function getGmailImportCandidates(days, maxThreads) {
     var threads = GmailApp.search(query, 0, searchLimit);
     var threadMessages = GmailApp.getMessagesForThreads(threads);
 
+    // GmailMessage に isSent() のような「自分が送ったか」を直接返すメソッドは無い。
+    // in:sent で検索したスレッドにも相手からの返信メッセージが混ざるため、
+    // 送信者（From）が自分のアドレスかどうかで判定する。
+    // Session.getActiveUser().getEmail() はドメイン設定によって空文字になることが
+    // あるため、その場合はフィルタせず（下書き以外は）全メッセージを対象にする。
+    var myEmail = normalizeCell(Session.getActiveUser().getEmail()).toLowerCase();
+
     // 既存顧客のメールアドレスは候補から除外する（#3 と同じ正規化で突き合わせ）
     var existingEmails = {};
     getCustomers().forEach(function (c) {
@@ -125,11 +132,14 @@ function getGmailImportCandidates(days, maxThreads) {
     var candidates = {}; // email(lower) -> candidate。同じ相手への複数送信は1件にまとめる
     threadMessages.forEach(function (messages) {
       messages.forEach(function (message) {
-        if (!message.isSent()) return; // 自分が送ったメッセージのみ
+        if (message.isDraft()) return; // 下書きは除外
+        var from = normalizeCell(message.getFrom()).toLowerCase();
+        if (myEmail && from.indexOf(myEmail) === -1) return; // 自分が送信者のメッセージのみ
         var recipients = parseRecipientList(message.getTo()).concat(parseRecipientList(message.getCc()));
         recipients.forEach(function (r) {
           var email = normalizeCell(r.email).toLowerCase();
-          if (!email || existingEmails[email] || candidates[email]) return;
+          // 自分自身（CCで自分に送っている等）・既存顧客・重複は候補に出さない
+          if (!email || email === myEmail || existingEmails[email] || candidates[email]) return;
           candidates[email] = {
             name: r.name || r.email,
             email: r.email,

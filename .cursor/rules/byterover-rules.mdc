@@ -1,23 +1,20 @@
 ---
-description: ByteRover MCP Custom Instructions
+description: 知識管理（brv CLI）とこのリポジトリの約束事
 alwaysApply: true
 ---
 
-[byterover-mcp]
+ByteRover MCP は廃止されました。`byterover-store-knowledge` /
+`byterover-retrieve-knowledge` は使わず、`brv` CLI をシェルから実行してください。
 
-You are given two tools from Byterover MCP server, including
-## 1. `byterover-store-knowledge`
-You `MUST` always use this tool when:
+```bash
+brv query "自然言語の質問"           # 取得
+brv search "キーワード" --limit 10   # 取得（BM25 のみ）
+brv curate "学んだこと: 判断・ファイルパス・理由" [-f path/to/file]
+```
 
-+ Learning new patterns, APIs, or architectural decisions from the codebase
-+ Encountering error solutions or debugging techniques
-+ Finding reusable code patterns or utility functions
-+ Completing any significant task or plan implementation
+- 新しいタスク・アーキテクチャ判断・不慣れな箇所に入る前に `brv query`
+- パターン、エラーの解法、設計判断を得たとき、まとまった作業を終えたときに `brv curate`
 
-## 2. `byterover-retrieve-knowledge`
-You `MUST` always use this tool when:
-
-+ Starting any new task or implementation to gather relevant context
-+ Before making architectural decisions to understand existing patterns
-+ When debugging issues to check for previous solutions
-+ Working with unfamiliar parts of the codebase
+このリポジトリ固有の注意（`.gs` の正は `src/` のみ、列定義は `Utils.gs` の spec、
+`oauthScopes` は手で同期、変更したら `npm test` など）は
+[docs/AGENTS.md](../../docs/AGENTS.md) にまとめてあります。

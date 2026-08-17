@@ -18,24 +18,36 @@ Google スプレッドシートと Google Apps Script を使用して、会社�
 
 ```
 crm/
-├── src/                     # GASコードファイル
-│   ├── Utils.gs            # 設定・ヘルパー関数、ID自動採番
-│   ├── Company.gs           # 会社関連の関数
-│   ├── Customer.gs          # 顧客関連の関数
-│   ├── Menu.gs             # カスタムメニューとダイアログ表示
-│   └── Test.gs              # テスト用関数
-├── html/                    # HTMLファイル
-│   ├── AddCompanyDialog.html
-│   ├── AddCustomerDialog.html
-│   └── SearchDialog.html
-├── docs/                    # ドキュメント
+├── src/                         # clasp の rootDir。この配下だけが GAS に push される
+│   ├── Utils.gs                 # 設定・ヘルパー関数、ID自動採番
+│   ├── Company.gs               # 会社関連の関数
+│   ├── Customer.gs              # 顧客関連の関数
+│   ├── Menu.gs                  # カスタムメニューとダイアログ表示
+│   ├── Test.gs                  # テスト用関数
+│   ├── appsscript.json          # GAS設定（タイムゾーン・OAuthスコープ）
+│   └── html/                    # HTMLダイアログ
+│       ├── AddCompanyDialog.html
+│       ├── AddCustomerDialog.html
+│       └── SearchDialog.html
+├── docs/                        # ドキュメント（push 対象外）
 │   ├── gas-crm-implementation-guide.md
 │   ├── AGENTS.md
 │   └── CLAUDE.md
-├── appsscript.json          # GAS設定
-├── .clasp.json              # Clasp設定
-└── package.json             # Node.js設定
+├── .clasp.json                  # Clasp設定（rootDir: src）
+├── .claspignore
+└── package.json                 # Node.js設定
 ```
+
+`clasp push` では `rootDir`（= `src`）の部分が取り除かれるため、Apps Script プロジェクト側のファイル名は次のようになります。
+
+```
+Utils / Company / Customer / Menu / Test
+html/AddCompanyDialog / html/AddCustomerDialog / html/SearchDialog
+```
+
+`Menu.gs` の `HtmlService.createHtmlOutputFromFile('html/AddCompanyDialog')` はこの名前を参照しています。**GAS のソースは `src/` 配下のみが正**です。リポジトリ直下に `.gs` を置くと同名関数が二重に push され、GAS は全ファイルを単一のグローバルスコープに展開するため後勝ちでサイレントに壊れます。
+
+送信されるファイル一覧は `npx clasp status` で確認できます。
 
 ## セットアップ
 

@@ -13,10 +13,18 @@
  */
 function addCustomer(name, companyId, email, phone, note) {
   try {
-    const sheet = getCustomerSheet();
-    const id = getNextCustomerId();
-    const createdAt = new Date();
-    sheet.appendRow([id, name, companyId || '', email || '', phone || '', note || '', createdAt]);
+    const spec = getCustomerSpec();
+    const sheet = getSheetBySpec(spec);
+    const id = getNextId(spec);
+    sheet.appendRow(buildRow(spec, {
+      id: id,
+      name: name,
+      companyId: companyId,
+      email: email,
+      phone: phone,
+      note: note,
+      createdAt: new Date()
+    }));
     return id;
   } catch (error) {
     Logger.log('addCustomer エラー: ' + error.toString());
@@ -30,24 +38,15 @@ function addCustomer(name, companyId, email, phone, note) {
  */
 function getCustomers() {
   try {
-    const sheet = getCustomerSheet();
-    const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) return [];
-    data.shift(); // ヘッダー行を削除
+    // 会社側と同じ readRows を通すので、companyId は双方とも正規化済み文字列。
+    // 会社ID の突き合わせが片側の空白や数値セルで外れることはない。
+    const customers = readRows(getCustomerSpec());
     const companies = getCompanies();
-    
-    return data.map(row => {
-      const company = companies.find(c => c.id === row[2]);
-      return {
-        id: row[0] || '',
-        name: row[1] || '',
-        companyId: row[2] || '',
-        companyName: company ? company.name : '',
-        email: row[3] || '',
-        phone: row[4] || '',
-        note: row[5] || '',
-        createdAt: row[6] || null
-      };
+
+    return customers.map(customer => {
+      const company = companies.find(c => c.id === customer.companyId);
+      customer.companyName = company ? company.name : '';
+      return customer;
     });
   } catch (error) {
     Logger.log('getCustomers エラー: ' + error.toString());
@@ -61,11 +60,14 @@ function getCustomers() {
  * @return {Array} 検索結果の顧客配列
  */
 function searchCustomers(keyword) {
-  const customers = getCustomers();
-  const lowerKeyword = keyword.toLowerCase();
-  return customers.filter(c => 
-    c.name.toLowerCase().includes(lowerKeyword) || 
-    c.companyName.toLowerCase().includes(lowerKeyword) || 
+  const lowerKeyword = normalizeCell(keyword).toLowerCase();
+  if (lowerKeyword === '') return [];
+
+  // getCustomers の各項目は readRows で文字列に正規化済みのため、
+  // 数値だけの名前・電話番号が入っていても toLowerCase で落ちない
+  return getCustomers().filter(c =>
+    c.name.toLowerCase().includes(lowerKeyword) ||
+    c.companyName.toLowerCase().includes(lowerKeyword) ||
     c.email.toLowerCase().includes(lowerKeyword)
   );
 }
@@ -76,8 +78,8 @@ function searchCustomers(keyword) {
  * @return {Array} 顧客オブジェクトの配列
  */
 function getCustomersByCompanyId(companyId) {
-  const customers = getCustomers();
-  return customers.filter(c => c.companyId === companyId);
+  const target = normalizeCell(companyId);
+  return getCustomers().filter(c => c.companyId === target);
 }
 
 /**

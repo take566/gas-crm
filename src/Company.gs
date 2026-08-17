@@ -12,10 +12,17 @@
  */
 function addCompany(name, address, phone, note) {
   try {
-    const sheet = getCompanySheet();
-    const id = getNextCompanyId();
-    const createdAt = new Date();
-    sheet.appendRow([id, name, address || '', phone || '', note || '', createdAt]);
+    const spec = getCompanySpec();
+    const sheet = getSheetBySpec(spec);
+    const id = getNextId(spec);
+    sheet.appendRow(buildRow(spec, {
+      id: id,
+      name: name,
+      address: address,
+      phone: phone,
+      note: note,
+      createdAt: new Date()
+    }));
     return id;
   } catch (error) {
     Logger.log('addCompany エラー: ' + error.toString());
@@ -29,33 +36,8 @@ function addCompany(name, address, phone, note) {
  */
 function getCompanies() {
   try {
-    const sheet = getCompanySheet();
-    const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) {
-      Logger.log('getCompanies: データがありません（ヘッダーのみ）');
-      return [];
-    }
-    data.shift(); // ヘッダー行を削除
-    
-    const companies = data
-      .filter(row => row[0] && row[0] !== '') // IDが存在する行のみ
-      .map(row => {
-        try {
-          return {
-            id: String(row[0] || '').trim(),
-            name: String(row[1] || '').trim(),
-            address: String(row[2] || '').trim(),
-            phone: String(row[3] || '').trim(),
-            note: String(row[4] || '').trim(),
-            createdAt: row[5] || null
-          };
-        } catch (e) {
-          Logger.log('getCompanies: 行の処理エラー: ' + e.toString());
-          return null;
-        }
-      })
-      .filter(company => company !== null && company.id !== '' && company.name !== ''); // IDと名前が両方存在するもののみ
-    
+    // 正規化と空行の除外は readRows が行う（顧客側と同一の実装）
+    const companies = readRows(getCompanySpec());
     Logger.log('getCompanies: ' + companies.length + '件の会社を取得');
     return companies;
   } catch (error) {
@@ -71,8 +53,8 @@ function getCompanies() {
  * @return {string|null} 会社ID
  */
 function getCompanyIdByName(companyName) {
-  const companies = getCompanies();
-  const company = companies.find(c => c.name === companyName);
+  const target = normalizeCell(companyName);
+  const company = getCompanies().find(c => c.name === target);
   return company ? company.id : null;
 }
 
@@ -82,8 +64,8 @@ function getCompanyIdByName(companyName) {
  * @return {Object|null} 会社オブジェクト
  */
 function getCompanyById(companyId) {
-  const companies = getCompanies();
-  return companies.find(c => c.id === companyId) || null;
+  const target = normalizeCell(companyId);
+  return getCompanies().find(c => c.id === target) || null;
 }
 
 /**

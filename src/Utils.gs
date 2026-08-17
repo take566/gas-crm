@@ -167,6 +167,32 @@ function buildRow(spec, values) {
 }
 
 // ============================================
+// 排他制御
+// ============================================
+
+/**
+ * ドキュメントロックを取ってから処理を実行する。
+ *
+ * 採番は「既存 ID の最大値を読む → 行を追加する」という read-modify-write
+ * なので、同じスプレッドシートを 2 人が同時に操作すると双方が同じ ID を
+ * 得て重複しうる。採番を伴う書き込みは必ずこの関数で囲む。
+ *
+ * @param {Function} fn - ロック内で実行する処理
+ * @return {*} fn の戻り値
+ */
+function withDocumentLock(fn) {
+  const lock = LockService.getDocumentLock();
+  if (!lock.tryLock(10000)) {
+    throw new Error('他の操作が実行中です。しばらく待ってから再度お試しください。');
+  }
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ============================================
 // ID自動採番
 // ============================================
 
@@ -223,6 +249,65 @@ function formatId(spec, num) {
  */
 function getNextId(spec) {
   return formatId(spec, getMaxIdNumber(readIdColumn(spec), spec.idPrefix) + 1);
+}
+
+/**
+ * ID が定義どおりの形式か（C001 / P001 のように prefix + 数字）
+ * @param {Object} spec - シート定義
+ * @param {string} id - 正規化済みの ID
+ * @return {boolean}
+ */
+function isValidId(spec, id) {
+  return new RegExp('^' + spec.idPrefix + '\\d+$').test(id);
+}
+
+/**
+ * ID が未採番の行に ID を振る。
+ *
+ * 「実データの行」= ID 以外のいずれかの列に値がある行、と定義する。
+ * 完全な空行には採番しない。
+ *
+ * ID 列に既に何か入っていて、それが定義の形式でない場合（数値・日付・
+ * 手入力の文字列など）は上書きせず skipped として数える。ユーザーが
+ * 意図して入れた値を消してしまう方が損害が大きいため。
+ *
+ * @param {Object} spec - シート定義
+ * @return {{assigned: number, skipped: number}} 採番した数と、形式不正で見送った数
+ */
+function assignMissingIds(spec) {
+  return withDocumentLock(() => {
+    const sheet = getSheetBySpec(spec);
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return { assigned: 0, skipped: 0 };
+
+    const idIndex = spec.columns.findIndex(col => col.key === 'id');
+    let maxNum = getMaxIdNumber(
+      data.slice(1).map(row => normalizeCell(row[idIndex])),
+      spec.idPrefix
+    );
+
+    let assigned = 0;
+    let skipped = 0;
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const id = normalizeCell(row[idIndex]);
+
+      if (id === '') {
+        // ID 以外がすべて空なら、その行は実データではないので触らない
+        const hasContent = row.some((cell, index) => index !== idIndex && normalizeCell(cell) !== '');
+        if (!hasContent) continue;
+
+        maxNum++;
+        sheet.getRange(i + 1, idIndex + 1).setValue(formatId(spec, maxNum));
+        assigned++;
+      } else if (!isValidId(spec, id)) {
+        Logger.log('assignMissingIds(' + spec.sheetName + '): ' + (i + 1) + '行目の ID "' + id + '" は形式が不正のため変更していません');
+        skipped++;
+      }
+    }
+
+    return { assigned: assigned, skipped: skipped };
+  });
 }
 
 /**

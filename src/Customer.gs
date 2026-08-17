@@ -14,18 +14,21 @@
 function addCustomer(name, companyId, email, phone, note) {
   try {
     const spec = getCustomerSpec();
-    const sheet = getSheetBySpec(spec);
-    const id = getNextId(spec);
-    sheet.appendRow(buildRow(spec, {
-      id: id,
-      name: name,
-      companyId: companyId,
-      email: email,
-      phone: phone,
-      note: note,
-      createdAt: new Date()
-    }));
-    return id;
+    // 採番と追加をロックで囲む（囲まないと同時追加で同じ ID が振られる）
+    return withDocumentLock(() => {
+      const sheet = getSheetBySpec(spec);
+      const id = getNextId(spec);
+      sheet.appendRow(buildRow(spec, {
+        id: id,
+        name: name,
+        companyId: companyId,
+        email: email,
+        phone: phone,
+        note: note,
+        createdAt: new Date()
+      }));
+      return id;
+    });
   } catch (error) {
     Logger.log('addCustomer エラー: ' + error.toString());
     throw new Error('顧客の追加に失敗しました: ' + error.toString());
@@ -91,40 +94,11 @@ function getCustomersByCompanyId(companyId) {
 
 /**
  * 顧客IDが振られていない行にIDを振る
- * @return {number} 振ったIDの数
+ * @return {{assigned: number, skipped: number}} 採番した数と、形式不正で見送った数
  */
 function assignMissingCustomerIds() {
   try {
-    const sheet = getCustomerSheet();
-    const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) return 0;
-    
-    // 既存のIDから最大値を取得
-    let maxNum = 0;
-    for (let i = 1; i < data.length; i++) {
-      const id = data[i][0];
-      if (id && typeof id === 'string' && id.startsWith('P')) {
-        const num = parseInt(id.replace('P', ''), 10);
-        if (!isNaN(num) && num > maxNum) {
-          maxNum = num;
-        }
-      }
-    }
-    
-    // IDが空欄の行にIDを振る
-    let assignedCount = 0;
-    for (let i = 1; i < data.length; i++) {
-      const id = data[i][0];
-      // IDが空欄または無効な場合
-      if (!id || id === '' || (typeof id === 'string' && !id.startsWith('P'))) {
-        maxNum++;
-        const newId = 'P' + String(maxNum).padStart(3, '0');
-        sheet.getRange(i + 1, 1).setValue(newId);
-        assignedCount++;
-      }
-    }
-    
-    return assignedCount;
+    return assignMissingIds(getCustomerSpec());
   } catch (error) {
     Logger.log('assignMissingCustomerIds エラー: ' + error.toString());
     throw new Error('顧客IDの割り当てに失敗しました: ' + error.toString());

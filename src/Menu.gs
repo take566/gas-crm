@@ -79,12 +79,7 @@ function showSearchDialog() {
  */
 function showAssignCompanyIdsDialog() {
   try {
-    const count = assignMissingCompanyIds();
-    if (count > 0) {
-      SpreadsheetApp.getUi().alert(count + '件の会社IDを割り当てました。');
-    } else {
-      SpreadsheetApp.getUi().alert('割り当てが必要な会社IDはありませんでした。');
-    }
+    SpreadsheetApp.getUi().alert(formatAssignResult(assignMissingCompanyIds(), '会社ID'));
   } catch (error) {
     SpreadsheetApp.getUi().alert('エラー: ' + error.toString());
   }
@@ -95,14 +90,29 @@ function showAssignCompanyIdsDialog() {
  */
 function showAssignCustomerIdsDialog() {
   try {
-    const count = assignMissingCustomerIds();
-    if (count > 0) {
-      SpreadsheetApp.getUi().alert(count + '件の顧客IDを割り当てました。');
-    } else {
-      SpreadsheetApp.getUi().alert('割り当てが必要な顧客IDはありませんでした。');
-    }
+    SpreadsheetApp.getUi().alert(formatAssignResult(assignMissingCustomerIds(), '顧客ID'));
   } catch (error) {
     SpreadsheetApp.getUi().alert('エラー: ' + error.toString());
   }
+}
+
+/**
+ * ID 割り当て結果をユーザー向けの文言に整形する
+ * @param {{assigned: number, skipped: number}} result - assignMissing*Ids の戻り値
+ * @param {string} label - 「会社ID」「顧客ID」
+ * @return {string} 表示するメッセージ
+ */
+function formatAssignResult(result, label) {
+  const messages = [];
+  messages.push(result.assigned > 0
+    ? result.assigned + '件の' + label + 'を割り当てました。'
+    : '割り当てが必要な' + label + 'はありませんでした。');
+
+  if (result.skipped > 0) {
+    messages.push('');
+    messages.push(result.skipped + '件は既に値が入っていて形式が想定と異なるため、上書きしていません。');
+    messages.push('該当行はシート上で直接ご確認ください（実行ログに行番号を記録しています）。');
+  }
+  return messages.join('\n');
 }
 

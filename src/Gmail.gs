@@ -117,10 +117,22 @@ function getGmailImportCandidates(days, maxThreads) {
 
     // GmailMessage に isSent() のような「自分が送ったか」を直接返すメソッドは無い。
     // in:sent で検索したスレッドにも相手からの返信メッセージが混ざるため、
-    // 送信者（From）が自分のアドレスかどうかで判定する。
-    // Session.getActiveUser().getEmail() はドメイン設定によって空文字になることが
-    // あるため、その場合はフィルタせず（下書き以外は）全メッセージを対象にする。
-    var myEmail = normalizeCell(Session.getActiveUser().getEmail()).toLowerCase();
+    // 本来は送信者（From）が自分のアドレスかどうかで判定したい。
+    //
+    // Session.getActiveUser().getEmail() は userinfo.email スコープを要求するうえ、
+    // HtmlService ダイアログ（google.script.run 経由）の実行コンテキストでは
+    // スコープを承認していても呼び出し自体が権限エラーになるケースが実機検証で
+    // 確認された（GAS の既知の制約。トリガー種別によって Session.getActiveUser の
+    // 可用性が変わる）。取得に失敗しても機能全体を止めたくないので try/catch で
+    // 包み、取得できなければフィルタをかけずに（下書き以外は）全メッセージを
+    // 対象にする。これにより userinfo.email スコープの承認自体を不要にしている。
+    var myEmail = '';
+    try {
+      myEmail = normalizeCell(Session.getActiveUser().getEmail()).toLowerCase();
+    } catch (sessionError) {
+      Logger.log('getGmailImportCandidates: 自分のメールアドレスを取得できませんでした（'
+        + sessionError.toString() + '）。送信者での絞り込みをスキップします。');
+    }
 
     // 既存顧客のメールアドレスは候補から除外する（#3 と同じ正規化で突き合わせ）
     var existingEmails = {};

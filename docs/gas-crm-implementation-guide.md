@@ -136,8 +136,7 @@ clone 直後のセットアップは [README](../README.md#3-認証とプロジ�
 "oauthScopes": [
   "https://www.googleapis.com/auth/spreadsheets.currentonly",
   "https://www.googleapis.com/auth/script.container.ui",
-  "https://www.googleapis.com/auth/gmail.readonly",
-  "https://www.googleapis.com/auth/userinfo.email"
+  "https://www.googleapis.com/auth/gmail.readonly"
 ]
 ```
 
@@ -150,16 +149,22 @@ clone 直後のセットアップは [README](../README.md#3-認証とプロジ�
 | `spreadsheets.currentonly` | `SpreadsheetApp.getActiveSpreadsheet()` / `getSheetByName` / `insertSheet` / `appendRow` / `getDataRange` / `getRange().setValue()` | `Utils.gs`, `Company.gs`, `Customer.gs` |
 | `script.container.ui` | `SpreadsheetApp.getUi()`、`ui.createMenu().addToUi()`、`ui.alert()`、`ui.showModalDialog()`、`HtmlService.createHtmlOutputFromFile()` | `Menu.gs` 全体 |
 | `gmail.readonly` | `GmailApp.search()` / `GmailApp.getMessagesForThreads()` | `Gmail.gs` |
-| `userinfo.email` | `Session.getActiveUser().getEmail()` | `Gmail.gs`（自分が送信したメッセージかどうかの判定に使用） |
 
 `script.container.ui` はコンテナバインドスクリプトの UI（カスタムメニュー・モーダル
 ダイアログ・サイドバー）に必要です。これが無いとメニュー表示やダイアログ起動が
 認可エラーになります。`gmail.readonly` は Gmail 送信履歴を**読み取るだけ**の最小権限で、
 送信・削除・ラベル変更はできません（そもそも本機能はそれらを行いません）。
 
-`Session.getActiveUser()` は一見スコープ不要に見えますが、実際には呼び出しに
-`userinfo.email` を要求されます（実機検証で発覚。`Session.getScriptTimeZone()` など
-他の `Session` メソッドは追加スコープ無しで動くため紛らわしい点です）。
+> **`Session.getActiveUser()` はあえて使っていません。**
+> 送信者（自分）を判定するために一度 `userinfo.email` スコープを追加して
+> `Session.getActiveUser().getEmail()` を呼んだところ、実機検証で「スコープを
+> 承認していても HtmlService ダイアログ（`google.script.run` 経由）の実行
+> コンテキストでは呼び出し自体が権限エラーになる」現象を確認しました（GAS の
+> 既知の制約で、トリガー種別によって `Session.getActiveUser` の可用性が変わり
+> ます）。再承認の往復でも解消しなかったため、`Gmail.gs` では `try/catch` で
+> 包み、**取得に失敗したらフィルタなしで動作にフォールバック**する設計にして
+> `userinfo.email` スコープへの依存自体を無くしました。詳細は
+> [`getGmailImportCandidates` のコメント](../src/Gmail.gs)を参照してください。
 
 > **UI を伴う機能を追加したとき**（サイドバー、`ui.prompt` など）や、**新しい Google
 > サービスを使い始めたとき**（`MailApp`、`DriveApp` など）は、この表と `oauthScopes` を
@@ -353,8 +358,8 @@ idDigits: 4,     // → C0001 形式
 | 検索しても何も起きない | 現在はエラーがダイアログに表示されます。表示が出ない場合は実行ログを確認 |
 | HTML ファイルが見つからない | `npx clasp status` で `src/html/*.html` が送信対象か確認。`Menu.gs` のパスが `html/AddCompanyDialog`（`src/` 無し）になっているか確認 |
 | ID が重複した | 同時操作で発生した可能性。現在は `withDocumentLock` で防いでいます |
-| Gmail取り込みで認可エラー | `src/appsscript.json` の `oauthScopes` に `gmail.readonly` と `userinfo.email` があるか確認（[2.4](#24-必要な-oauth-スコープ)） |
-| Gmail取り込みが `Session.getActiveUser を呼び出すことができません` で失敗 | `userinfo.email` スコープが不足しています。追加後は再 push し、初回のみ再承認が必要です |
+| Gmail取り込みで認可エラー | `src/appsscript.json` の `oauthScopes` に `gmail.readonly` があるか確認（[2.4](#24-必要な-oauth-スコープ)） |
+| Gmail取り込みの候補に、自分自身への返信メッセージの相手が混ざる | `Session.getActiveUser()` が実行コンテキストの制約で送信者を判定できず、フィルタなしにフォールバックしたときの挙動です。実行ログに「自分のメールアドレスを取得できませんでした」と出ていれば該当します。登録前に候補を確認・除外してください |
 | Gmail取り込みの候補が0件 | 直近30日に送信履歴が無いか、宛先が全員すでに顧客登録済みの可能性があります |
 | Gmail取り込みの会社名がおかしい | 候補は送信先メールアドレスの**ドメイン**であって会社名ではありません。登録前に必ず編集してください |
 

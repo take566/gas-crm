@@ -75,7 +75,16 @@ function makeEnv(sheets, options = {}) {
     },
     Session: {
       getScriptTimeZone: () => 'Asia/Tokyo',
-      getActiveUser: () => ({ getEmail: () => options.myEmail ?? 'me@example.co.jp' })
+      // 実機検証で、HtmlService ダイアログの実行コンテキストでは
+      // Session.getActiveUser() の呼び出し自体が権限エラーになるケースを確認した。
+      // options.activeUserThrows でその状況を再現できるようにする
+      getActiveUser: () => {
+        if (options.activeUserThrows) {
+          throw new Error('Exception: Session.getActiveUser を呼び出す権限がありません。'
+            + '必要な権限: https://www.googleapis.com/auth/userinfo.email');
+        }
+        return { getEmail: () => options.myEmail ?? 'me@example.co.jp' };
+      }
     },
     Logger: { log: m => logs.push(m) },
     Date
@@ -343,6 +352,26 @@ section('#15-3 getGmailImportCandidates — 既存顧客の除外・重複排除
   check('相手からの返信は候補に混入しない（自分のアドレスが出ない）',
     candidates.some(c => c.email === 'me@example.co.jp'), false);
   check('下書きの宛先は候補に含まれない', candidates.some(c => c.email === 'sagen@example.co.jp'), false);
+}
+{
+  // 実機検証: HtmlService ダイアログの実行コンテキストでは、userinfo.email を
+  // 承認していても Session.getActiveUser() の呼び出し自体が権限エラーになる
+  // ケースが確認された。取得に失敗しても機能停止させず、フィルタなしで
+  // （下書き以外は）全メッセージを対象にフォールバックすることを確認する
+  const { ctx, logs } = makeEnv(
+    { '会社': [COMPANY_HEADER], '顧客': [CUSTOMER_HEADER] },
+    {
+      activeUserThrows: true,
+      gmailThreads: [[
+        { from: 'me@example.co.jp', to: '"相手太郎" <aite@example.co.jp>', cc: '' },
+        { from: '"相手太郎" <aite@example.co.jp>', to: 'me@example.co.jp', cc: '' } // From 判定が効かないので候補に混入する
+      ]]
+    }
+  );
+  const candidates = ctx.getGmailImportCandidates(30, 50);
+  check('取得に失敗しても例外を投げずに継続する', candidates.map(c => c.email).sort(),
+    ['aite@example.co.jp', 'me@example.co.jp']);
+  check('フォールバックしたことをログに残す', logs.some(l => l.indexOf('自分のメールアドレスを取得できませんでした') !== -1), true);
 }
 {
   // clampNumber の丸めと GmailApp.search への引数伝播を別ケースで確認

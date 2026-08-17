@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 10px; }
+    .toolbar { margin-bottom: 10px; display: flex; align-items: center; gap: 10px; }
+    button {
+      background-color: #4285f4;
+      color: white;
+      padding: 8px 15px;
+      border: none;
+      cursor: pointer;
+    }
+    button:disabled { background-color: #aaa; cursor: default; }
+    .secondary { background-color: #888; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #ddd; padding: 6px; text-align: left; font-size: 12px; vertical-align: middle; }
+    th { background-color: #4285f4; color: white; }
+    tr:nth-child(even) { background-color: #f9f9f9; }
+    input[type="text"] { width: 100%; box-sizing: border-box; padding: 4px; font-size: 12px; }
+    .note { color: #666; font-size: 11px; margin-top: 4px; }
+    .no-result, .error { margin-top: 20px; }
+    .error { color: #c5221f; }
+    .result-ok { color: #188038; }
+    .result-ng { color: #c5221f; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button id="reloadButton" onclick="loadCandidates()">直近30日の送信履歴から再取得</button>
+    <button id="importButton" onclick="importSelected()" disabled>選択した行を登録</button>
+  </div>
+  <p class="note">
+    会社名は送信先メールアドレスのドメインから推測した候補です（実際の会社名ではありません）。
+    フリーメール（Gmail/Yahoo!等）は候補を出しません。登録前に必ず確認・修正してください。
+  </p>
+  <div id="results"></div>
+
+  <script>
+    var lastCandidates = [];
+
+    // ページ読み込み時に自動で候補を取得
+    (function () {
+      loadCandidates();
+    })();
+
+    function setBusy(isBusy) {
+      document.getElementById('reloadButton').disabled = isBusy;
+      document.getElementById('importButton').disabled = isBusy || !hasCheckedRow();
+    }
+
+    function hasCheckedRow() {
+      var boxes = document.querySelectorAll('.candidate-checkbox');
+      for (var i = 0; i < boxes.length; i++) {
+        if (boxes[i].checked) return true;
+      }
+      return false;
+    }
+
+    function renderMessage(text, className) {
+      var div = document.getElementById('results');
+      div.textContent = '';
+      var p = document.createElement('p');
+      p.className = className;
+      p.textContent = text;
+      div.appendChild(p);
+    }
+
+    function loadCandidates() {
+      setBusy(true);
+      renderMessage('読み込み中…', 'note');
+      google.script.run
+        .withSuccessHandler(function (candidates) {
+          setBusy(false);
+          lastCandidates = candidates || [];
+          renderCandidates(lastCandidates);
+        })
+        .withFailureHandler(function (error) {
+          setBusy(false);
+          renderMessage('取得に失敗しました: ' + (error && error.message ? error.message : String(error)), 'error');
+        })
+        .getGmailImportCandidates(30, 50);
+    }
+
+    function renderCandidates(candidates) {
+      var div = document.getElementById('results');
+      div.textContent = '';
+
+      if (!candidates || candidates.length === 0) {
+        var p = document.createElement('p');
+        p.className = 'no-result';
+        p.textContent = '新しい宛先候補は見つかりませんでした（既に顧客登録済みの相手は除外されます）。';
+        div.appendChild(p);
+        document.getElementById('importButton').disabled = true;
+        return;
+      }
+
+      var table = document.createElement('table');
+      var headerRow = document.createElement('tr');
+      ['', '名前', 'メール', '会社名（推測・編集可）'].forEach(function (label) {
+        var th = document.createElement('th');
+        th.textContent = label;
+        headerRow.appendChild(th);
+      });
+      table.appendChild(headerRow);
+
+      candidates.forEach(function (c, index) {
+        var tr = document.createElement('tr');
+
+        var checkboxCell = document.createElement('td');
+        var checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'candidate-checkbox';
+        checkbox.dataset.index = String(index);
+        checkbox.addEventListener('change', function () {
+          document.getElementById('importButton').disabled = !hasCheckedRow();
+        });
+        checkboxCell.appendChild(checkbox);
+        tr.appendChild(checkboxCell);
+
+        var nameCell = document.createElement('td');
+        var nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.className = 'name-input';
+        nameInput.value = c.name || '';
+        nameCell.appendChild(nameInput);
+        tr.appendChild(nameCell);
+
+        var emailCell = document.createElement('td');
+        emailCell.textContent = c.email || '';
+        tr.appendChild(emailCell);
+
+        var companyCell = document.createElement('td');
+        var companyInput = document.createElement('input');
+        companyInput.type = 'text';
+        companyInput.className = 'company-input';
+        companyInput.placeholder = '空欄可';
+        companyInput.value = c.companyGuess || '';
+        companyCell.appendChild(companyInput);
+        tr.appendChild(companyCell);
+
+        table.appendChild(tr);
+      });
+
+      div.appendChild(table);
+      document.getElementById('importButton').disabled = true;
+    }
+
+    function importSelected() {
+      var rows = [];
+      var trs = document.querySelectorAll('#results table tr');
+      // 1行目はヘッダーなのでスキップ
+      for (var i = 1; i < trs.length; i++) {
+        var checkbox = trs[i].querySelector('.candidate-checkbox');
+        if (!checkbox || !checkbox.checked) continue;
+        var candidate = lastCandidates[Number(checkbox.dataset.index)];
+        rows.push({
+          name: trs[i].querySelector('.name-input').value,
+          email: candidate.email,
+          companyName: trs[i].querySelector('.company-input').value
+        });
+      }
+      if (rows.length === 0) return;
+
+      setBusy(true);
+      google.script.run
+        .withSuccessHandler(function (results) {
+          setBusy(false);
+          renderResults(results);
+        })
+        .withFailureHandler(function (error) {
+          setBusy(false);
+          renderMessage('登録に失敗しました: ' + (error && error.message ? error.message : String(error)), 'error');
+        })
+        .importSelectedGmailContacts(rows);
+    }
+
+    function renderResults(results) {
+      var div = document.getElementById('results');
+      div.textContent = '';
+
+      var ul = document.createElement('ul');
+      (results || []).forEach(function (r) {
+        var li = document.createElement('li');
+        li.className = r.success ? 'result-ok' : 'result-ng';
+        li.textContent = r.success
+          ? (r.name + ' を登録しました（顧客ID: ' + r.customerId + '）')
+          : (r.name + ' の登録に失敗しました: ' + r.error);
+        ul.appendChild(li);
+      });
+      div.appendChild(ul);
+
+      var reloadHint = document.createElement('p');
+      reloadHint.className = 'note';
+      reloadHint.textContent = '登録済みの相手は次回の再取得で候補から除外されます。';
+      div.appendChild(reloadHint);
+    }
+  </script>
+</body>
+</html>

@@ -86,6 +86,7 @@ clone 直後のセットアップは [README](../README.md#3-認証とプロジ�
 | [`src/Utils.gs`](../src/Utils.gs) | シート定義、正規化、シートアクセス、排他制御、採番 | `getCompanySpec` / `getCustomerSpec` / `normalizeCell` / `readRows` / `buildRow` / `withDocumentLock` / `getNextId` / `assignMissingIds` |
 | [`src/Company.gs`](../src/Company.gs) | 会社の追加・取得 | `addCompany` / `getCompanies` / `getCompanyById` / `getCompanyIdByName` / `assignMissingCompanyIds` |
 | [`src/Customer.gs`](../src/Customer.gs) | 顧客の追加・取得・検索 | `addCustomer` / `getCustomers` / `searchCustomers` / `getCustomersByCompanyId` / `assignMissingCustomerIds` |
+| [`src/Gmail.gs`](../src/Gmail.gs) | Gmail 送信履歴からの顧客候補抽出・取り込み | `getGmailImportCandidates` / `importSelectedGmailContacts` / `guessCompanyFromEmail` / `parseRecipientList` |
 | [`src/Menu.gs`](../src/Menu.gs) | カスタムメニューとダイアログ表示 | `onOpen` / `initializeSheets` / `show*Dialog` / `formatAssignResult` |
 | [`src/Test.gs`](../src/Test.gs) | 手動スモークテスト（**実シートに書き込む**） | `DEV_testAddCompany` / `DEV_testAddCustomer` |
 | [`src/html/`](../src/html) | 入力・検索ダイアログ | — |
@@ -119,6 +120,14 @@ clone 直後のセットアップは [README](../README.md#3-認証とプロジ�
 「会社名が空の C005」は `getCompanies()` から消えます。これを採番に使うと次が `C002`
 になり既存の `C005` と衝突するため、採番だけは `readIdColumn()` で ID 列の全行を見ます。
 
+**Gmail の「会社名候補」は会社名ではなくドメイン**
+
+メールヘッダーには会社名フィールドが存在しません。`guessCompanyFromEmail` が返すのは
+送信先メールアドレスのドメイン（`example.co.jp` など）で、実際の会社名とは限りません。
+`FREE_EMAIL_DOMAINS`（Gmail/Yahoo!等）はそもそも候補を出しません。取り込みダイアログで
+必ずユーザーに確認・編集させ、`addCompany` をそのまま呼ぶことで既存の正規化・採番・
+ロックのロジックに乗せています（Gmail 用に別ロジックを作らない）。
+
 ### 2.4 必要な OAuth スコープ
 
 `src/appsscript.json` でスコープを**明示宣言**しています。
@@ -126,7 +135,8 @@ clone 直後のセットアップは [README](../README.md#3-認証とプロジ�
 ```json
 "oauthScopes": [
   "https://www.googleapis.com/auth/spreadsheets.currentonly",
-  "https://www.googleapis.com/auth/script.container.ui"
+  "https://www.googleapis.com/auth/script.container.ui",
+  "https://www.googleapis.com/auth/gmail.readonly"
 ]
 ```
 
@@ -138,10 +148,12 @@ clone 直後のセットアップは [README](../README.md#3-認証とプロジ�
 |---|---|---|
 | `spreadsheets.currentonly` | `SpreadsheetApp.getActiveSpreadsheet()` / `getSheetByName` / `insertSheet` / `appendRow` / `getDataRange` / `getRange().setValue()` | `Utils.gs`, `Company.gs`, `Customer.gs` |
 | `script.container.ui` | `SpreadsheetApp.getUi()`、`ui.createMenu().addToUi()`、`ui.alert()`、`ui.showModalDialog()`、`HtmlService.createHtmlOutputFromFile()` | `Menu.gs` 全体 |
+| `gmail.readonly` | `GmailApp.search()` / `GmailApp.getMessagesForThreads()` | `Gmail.gs` |
 
 `script.container.ui` はコンテナバインドスクリプトの UI（カスタムメニュー・モーダル
 ダイアログ・サイドバー）に必要です。これが無いとメニュー表示やダイアログ起動が
-認可エラーになります。
+認可エラーになります。`gmail.readonly` は Gmail 送信履歴を**読み取るだけ**の最小権限で、
+送信・削除・ラベル変更はできません（そもそも本機能はそれらを行いません）。
 
 > **UI を伴う機能を追加したとき**（サイドバー、`ui.prompt` など）や、**新しい Google
 > サービスを使い始めたとき**（`MailApp`、`DriveApp` など）は、この表と `oauthScopes` を
@@ -159,6 +171,7 @@ clone 直後のセットアップは [README](../README.md#3-認証とプロジ�
 | [`AddCompanyDialog.html`](../src/html/AddCompanyDialog.html) | `addCompany(name, address, phone, note)` |
 | [`AddCustomerDialog.html`](../src/html/AddCustomerDialog.html) | `getCompanies()`（会社プルダウン）、`addCustomer(name, companyId, email, phone, note)` |
 | [`SearchDialog.html`](../src/html/SearchDialog.html) | `searchCustomers(keyword)` |
+| [`ImportFromGmailDialog.html`](../src/html/ImportFromGmailDialog.html) | `getGmailImportCandidates(days, maxThreads)`、`importSelectedGmailContacts(rows)` |
 
 `Menu.gs` からは `HtmlService.createHtmlOutputFromFile('html/AddCompanyDialog')` の
 ように、**push 後のファイル名**（`src/` が取り除かれた名前）で参照します。
@@ -217,7 +230,16 @@ clone 直後のセットアップは [README](../README.md#3-認証とプロジ�
 2. 名前・会社名・メールの部分一致で検索できることを確認
 3. 会社名の列が埋まっていることを確認（空なら会社ID の突き合わせが外れています）
 
-### 4.6 ロジックのローカル検証
+### 4.6 Gmail送信履歴からの取り込み
+
+1. 「🗂️ CRM」→「Gmail送信履歴から取り込み」
+2. 初回は Gmail 読み取りの追加承認が必要（[2.4](#24-必要な-oauth-スコープ)）
+3. 直近30日の送信履歴から、未登録の宛先が一覧表示されることを確認
+4. 会社名候補（ドメイン）が編集可能なこと、フリーメール宛には候補が出ないことを確認
+5. チェックを付けて「選択した行を登録」→ 会社・顧客が追加されることを確認
+6. 再度開くと、登録済みの相手が候補から消えていることを確認
+
+### 4.7 ロジックのローカル検証
 
 シートに触らずに列マッピング・正規化・結合・採番を確認できます。
 
@@ -246,11 +268,13 @@ crm/
 │   ├── Customer.gs
 │   ├── Menu.gs
 │   ├── Test.gs
+│   ├── Gmail.gs
 │   ├── appsscript.json
 │   └── html/
 │       ├── AddCompanyDialog.html
 │       ├── AddCustomerDialog.html
-│       └── SearchDialog.html
+│       ├── SearchDialog.html
+│       └── ImportFromGmailDialog.html
 ├── tests/
 │   └── local-harness.mjs        # npm test
 ├── docs/
@@ -272,10 +296,12 @@ CRM
 ├── Customer.gs
 ├── Menu.gs
 ├── Test.gs
+├── Gmail.gs
 └── html/
     ├── AddCompanyDialog.html
     ├── AddCustomerDialog.html
-    └── SearchDialog.html
+    ├── SearchDialog.html
+    └── ImportFromGmailDialog.html
 ```
 
 ---
@@ -321,6 +347,9 @@ idDigits: 4,     // → C0001 形式
 | 検索しても何も起きない | 現在はエラーがダイアログに表示されます。表示が出ない場合は実行ログを確認 |
 | HTML ファイルが見つからない | `npx clasp status` で `src/html/*.html` が送信対象か確認。`Menu.gs` のパスが `html/AddCompanyDialog`（`src/` 無し）になっているか確認 |
 | ID が重複した | 同時操作で発生した可能性。現在は `withDocumentLock` で防いでいます |
+| Gmail取り込みで認可エラー | `src/appsscript.json` の `oauthScopes` に `gmail.readonly` があるか確認（[2.4](#24-必要な-oauth-スコープ)） |
+| Gmail取り込みの候補が0件 | 直近30日に送信履歴が無いか、宛先が全員すでに顧客登録済みの可能性があります |
+| Gmail取り込みの会社名がおかしい | 候補は送信先メールアドレスの**ドメイン**であって会社名ではありません。登録前に必ず編集してください |
 
 ### ID の「欠番」について
 

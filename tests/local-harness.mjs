@@ -12,7 +12,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 
 const SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src');
-const files = ['Utils.gs', 'Company.gs', 'Customer.gs', 'Menu.gs'];
+const files = ['Utils.gs', 'Company.gs', 'Customer.gs', 'Menu.gs', 'Gmail.gs'];
 
 class FakeSheet {
   constructor(name, rows) { this.name = name; this.rows = rows; }
@@ -30,6 +30,7 @@ function makeEnv(sheets, options = {}) {
   const logs = [];
   const alerts = [];
   const lock = { acquired: 0, released: 0 };
+  const gmailSearchCalls = [];
   const ctx = {
     console,
     SpreadsheetApp: {
@@ -45,12 +46,37 @@ function makeEnv(sheets, options = {}) {
         releaseLock: () => { lock.released++; }
       })
     },
+    // GmailApp.search はスレッドの配列を返す想定だが、テストではスレッドの中身は
+    // getMessagesForThreads 側に注入した options.gmailThreads で決めるので、
+    // search の戻り値はその件数だけ埋めたダミー配列でよい
+    GmailApp: {
+      search: (query, start, max) => {
+        gmailSearchCalls.push({ query, start, max });
+        return (options.gmailThreads || []).map(() => ({}));
+      },
+      getMessagesForThreads: () => (options.gmailThreads || []).map(messages =>
+        messages.map(m => ({
+          isSent: () => m.isSent !== false,
+          getTo: () => m.to || '',
+          getCc: () => m.cc || ''
+        }))
+      )
+    },
+    Utilities: {
+      formatDate: (date) => {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}/${m}/${d}`;
+      }
+    },
+    Session: { getScriptTimeZone: () => 'Asia/Tokyo' },
     Logger: { log: m => logs.push(m) },
     Date
   };
   vm.createContext(ctx);
   for (const f of files) vm.runInContext(readFileSync(path.join(SRC, f), 'utf8'), ctx, { filename: f });
-  return { ctx, store, logs, alerts, lock };
+  return { ctx, store, logs, alerts, lock, gmailSearchCalls };
 }
 
 const COMPANY_HEADER = ['会社ID', '会社名', '住所', '電話番号', '備考', '作成日時'];
@@ -236,6 +262,101 @@ section('#6-3 ID 割り当ての結果表示');
     '3件の顧客IDを割り当てました。');
   check('見送りを含む', ctx.formatAssignResult({ assigned: 1, skipped: 2 }, '会社ID').split('\n')[2],
     '2件は既に値が入っていて形式が想定と異なるため、上書きしていません。');
+}
+
+// ---------------------------------------------------------------- 12
+section('#15-1 会社ドメインの推測（フリーメールは候補を出さない）');
+{
+  const { ctx } = makeEnv({});
+  check('会社ドメインなら候補になる', ctx.guessCompanyFromEmail('yamada@example.co.jp'), 'example.co.jp');
+  check('大文字混じりは小文字化される', ctx.guessCompanyFromEmail('Yamada@Example.CO.JP'), 'example.co.jp');
+  check('gmail.com は候補にしない', ctx.guessCompanyFromEmail('yamada@gmail.com'), '');
+  check('yahoo.co.jp は候補にしない', ctx.guessCompanyFromEmail('yamada@yahoo.co.jp'), '');
+  check('不正なメール形式は空文字', ctx.guessCompanyFromEmail('not-an-email'), '');
+  check('空文字は空文字', ctx.guessCompanyFromEmail(''), '');
+}
+
+// ---------------------------------------------------------------- 13
+section('#15-2 To/Cc ヘッダーのパース');
+{
+  const { ctx } = makeEnv({});
+  check('表示名付き', ctx.parseRecipientList('"山田太郎" <yamada@example.co.jp>'),
+    [{ name: '山田太郎', email: 'yamada@example.co.jp' }]);
+  check('表示名なし', ctx.parseRecipientList('yamada@example.co.jp'),
+    [{ name: '', email: 'yamada@example.co.jp' }]);
+  check('複数宛先（カンマ区切り）', ctx.parseRecipientList('"山田太郎" <yamada@example.co.jp>, sato@example.com'),
+    [{ name: '山田太郎', email: 'yamada@example.co.jp' }, { name: '', email: 'sato@example.com' }]);
+  check('空文字は空配列', ctx.parseRecipientList(''), []);
+  check('@ を含まない断片は除外', ctx.parseRecipientList('yamada@example.co.jp, not-an-email'),
+    [{ name: '', email: 'yamada@example.co.jp' }]);
+}
+
+// ---------------------------------------------------------------- 14
+section('#15-3 getGmailImportCandidates — 既存顧客の除外・重複排除・検索範囲');
+{
+  const { ctx } = makeEnv(
+    {
+      '会社': [COMPANY_HEADER],
+      '顧客': [CUSTOMER_HEADER, ['P001', '既存太郎', '', '既存@example.co.jp', '', '', '']]
+    },
+    {
+      gmailThreads: [
+        [
+          { to: '"新規太郎" <shinki@example.co.jp>', cc: '' },
+          { to: '既存@example.co.jp', cc: '' } // 既存顧客は除外される
+        ],
+        [
+          { to: '"新規太郎" <shinki@example.co.jp>', cc: '"別件花子" <hanako@gmail.com>' } // 同一人物への再送は1件に集約
+        ]
+      ]
+    }
+  );
+  const candidates = ctx.getGmailImportCandidates(30, 50);
+  check('既存顧客のメールは候補から除外', candidates.some(c => c.email === '既存@example.co.jp'), false);
+  check('重複する宛先は1件に集約', candidates.filter(c => c.email === 'shinki@example.co.jp').length, 1);
+  check('会社ドメインが推測される', candidates.find(c => c.email === 'shinki@example.co.jp').companyGuess, 'example.co.jp');
+  check('フリーメールは会社候補なし', candidates.find(c => c.email === 'hanako@gmail.com').companyGuess, '');
+}
+{
+  // clampNumber の丸めと GmailApp.search への引数伝播を別ケースで確認
+  const env = makeEnv({ '会社': [COMPANY_HEADER], '顧客': [CUSTOMER_HEADER] }, { gmailThreads: [] });
+  env.ctx.getGmailImportCandidates(9999, 9999); // 範囲外は上限に丸められる
+  check('日数は上限90に丸められる', /after:\d{4}\/\d{2}\/\d{2}/.test(env.gmailSearchCalls[0].query), true);
+  check('件数は上限200に丸められる', env.gmailSearchCalls[0].max, 200);
+  env.ctx.getGmailImportCandidates(); // 未指定はデフォルト
+  check('未指定時のデフォルト件数は50', env.gmailSearchCalls[1].max, 50);
+}
+
+// ---------------------------------------------------------------- 15
+section('#15-4 importSelectedGmailContacts — 会社の新規作成・既存流用・行ごとの独立性');
+{
+  const { ctx, store } = makeEnv({
+    '会社': [COMPANY_HEADER, ['C001', '既存会社', '', '', '', '']],
+    '顧客': [CUSTOMER_HEADER]
+  });
+
+  const results = ctx.importSelectedGmailContacts([
+    { name: '山田太郎', email: 'yamada@new-example.co.jp', companyName: '新規会社' },
+    { name: '鈴木花子', email: 'suzuki@example.co.jp', companyName: '既存会社' },
+    { name: '個人太郎', email: 'kojin@gmail.com', companyName: '' }
+  ]);
+
+  check('3件とも成功', results.every(r => r.success), true);
+  check('新規会社が作成される', store.get('会社').rows.some(r => r[1] === '新規会社'), true);
+  check('会社は重複作成されない（既存会社のまま）',
+    store.get('会社').rows.filter(r => r[1] === '既存会社').length, 1);
+
+  const customers = ctx.getCustomers();
+  const suzuki = customers.find(c => c.email === 'suzuki@example.co.jp');
+  check('既存会社に紐付く', suzuki.companyId, 'C001');
+  const kojin = customers.find(c => c.email === 'kojin@gmail.com');
+  check('会社名が空なら companyId も空', kojin.companyId, '');
+}
+{
+  // 空配列・未指定
+  const { ctx } = makeEnv({ '会社': [COMPANY_HEADER], '顧客': [CUSTOMER_HEADER] });
+  check('空配列は空配列を返す', ctx.importSelectedGmailContacts([]), []);
+  check('未指定は空配列を返す', ctx.importSelectedGmailContacts(undefined), []);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

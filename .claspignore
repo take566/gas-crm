@@ -1,31 +1,13 @@
 # Clasp ignore file
-# このファイルに記載されたファイル/ディレクトリは clasp push でアップロードされません
+# ここに記載したファイル/ディレクトリは clasp push でアップロードされません。
+#
+# .clasp.json の rootDir は "src" なので、src/ の外（docs/, node_modules/,
+# package.json, README.md など）はそもそも push 対象になりません。
+# したがってここでは src/ 配下に置かれうる非 GAS ファイルだけを除外します。
 
-# ドキュメントファイル
+# ドキュメント
 *.md
-docs/
-
-# Git関連
-.git/
-.gitignore
-
-# Node modules（完全に除外）
-node_modules/
-**/node_modules/**
-
-# パッケージ管理ファイル
-package.json
-package-lock.json
-pnpm-lock.yaml
-yarn.lock
-
-# その他の設定ファイル
-.claspignore
-.clasp.json
 
 # 一時ファイル
 *.tmp
 *.log
-
-# HTMLファイルフォルダ（明示的に含める）
-!html/**

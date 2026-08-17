@@ -12,7 +12,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 
 const SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src');
-const files = ['Utils.gs', 'Company.gs', 'Customer.gs'];
+const files = ['Utils.gs', 'Company.gs', 'Customer.gs', 'Menu.gs'];
 
 class FakeSheet {
   constructor(name, rows) { this.name = name; this.rows = rows; }
@@ -25,15 +25,24 @@ class FakeSheet {
   getRange(r, c) { return { setValue: v => { this.rows[r - 1][c - 1] = v; } }; }
 }
 
-function makeEnv(sheets) {
+function makeEnv(sheets, options = {}) {
   const store = new Map(Object.entries(sheets).map(([n, rows]) => [n, new FakeSheet(n, rows)]));
   const logs = [];
+  const alerts = [];
+  const lock = { acquired: 0, released: 0 };
   const ctx = {
     console,
     SpreadsheetApp: {
       getActiveSpreadsheet: () => ({
         getSheetByName: n => store.get(n) || null,
         insertSheet: n => { const s = new FakeSheet(n, []); store.set(n, s); return s; }
+      }),
+      getUi: () => ({ alert: m => alerts.push(m) })
+    },
+    LockService: {
+      getDocumentLock: () => ({
+        tryLock: () => { if (options.lockUnavailable) return false; lock.acquired++; return true; },
+        releaseLock: () => { lock.released++; }
       })
     },
     Logger: { log: m => logs.push(m) },
@@ -41,7 +50,7 @@ function makeEnv(sheets) {
   };
   vm.createContext(ctx);
   for (const f of files) vm.runInContext(readFileSync(path.join(SRC, f), 'utf8'), ctx, { filename: f });
-  return { ctx, store, logs };
+  return { ctx, store, logs, alerts, lock };
 }
 
 const COMPANY_HEADER = ['会社ID', '会社名', '住所', '電話番号', '備考', '作成日時'];
@@ -175,6 +184,58 @@ section('#4 searchCustomers はサーバ側で例外を握り潰さない');
   try { ctx.searchCustomers('山田'); } catch (e) { message = e.message; }
   check('例外がクライアントへ投げ返される', message, '顧客の検索に失敗しました: Error: boom');
   check('ログにも残る', logs.some(l => l.indexOf('searchCustomers エラー') === 0), true);
+}
+
+// ---------------------------------------------------------------- 9
+section('#6-1 assignMissingIds は未採番行だけを埋め、既存の値は上書きしない');
+{
+  const { ctx, store, logs } = makeEnv({
+    '会社': [COMPANY_HEADER,
+      ['C001', 'A社', '', '', '', ''],
+      ['', 'B社', '大阪', '', '', ''],          // 未採番 → 採番される
+      ['C005', 'C社', '', '', '', ''],
+      [12345, 'D社', '', '', '', ''],           // 数値。既存値なので上書きしない
+      ['社外', 'E社', '', '', '', ''],          // 手入力。上書きしない
+      ['', '', '', '', '', '']],                // 完全な空行 → 触らない
+    '顧客': [CUSTOMER_HEADER]
+  });
+  const result = ctx.assignMissingCompanyIds();
+  check('採番数', result.assigned, 1);
+  check('形式不正で見送った数', result.skipped, 2);
+  check('採番は最大値の次（C006）', store.get('会社').rows[2][0], 'C006');
+  check('数値セルは温存', store.get('会社').rows[4][0], 12345);
+  check('手入力文字列は温存', store.get('会社').rows[5][0], '社外');
+  check('空行は空のまま', store.get('会社').rows[6][0], '');
+  check('見送った行はログに残る', logs.filter(l => l.indexOf('形式が不正') !== -1).length, 2);
+}
+
+// ---------------------------------------------------------------- 10
+section('#6-2 採番と追加がドキュメントロックで囲まれている');
+{
+  const { ctx, lock } = makeEnv({ '会社': [COMPANY_HEADER], '顧客': [CUSTOMER_HEADER] });
+  ctx.addCompany('A社');
+  ctx.addCustomer('山田', '');
+  check('ロックを取得した回数', lock.acquired, 2);
+  check('必ず解放される', lock.released, 2);
+
+  const busy = makeEnv({ '会社': [COMPANY_HEADER], '顧客': [CUSTOMER_HEADER] }, { lockUnavailable: true });
+  let message = null;
+  try { busy.ctx.addCompany('A社'); } catch (e) { message = e.message; }
+  check('ロックが取れなければ追加しない',
+    message, '会社の追加に失敗しました: Error: 他の操作が実行中です。しばらく待ってから再度お試しください。');
+  check('行は追加されていない', busy.store.get('会社').rows.length, 1);
+}
+
+// ---------------------------------------------------------------- 11
+section('#6-3 ID 割り当ての結果表示');
+{
+  const { ctx } = makeEnv({ '会社': [COMPANY_HEADER], '顧客': [CUSTOMER_HEADER] });
+  check('採番なし', ctx.formatAssignResult({ assigned: 0, skipped: 0 }, '会社ID'),
+    '割り当てが必要な会社IDはありませんでした。');
+  check('採番あり', ctx.formatAssignResult({ assigned: 3, skipped: 0 }, '顧客ID'),
+    '3件の顧客IDを割り当てました。');
+  check('見送りを含む', ctx.formatAssignResult({ assigned: 1, skipped: 2 }, '会社ID').split('\n')[2],
+    '2件は既に値が入っていて形式が想定と異なるため、上書きしていません。');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

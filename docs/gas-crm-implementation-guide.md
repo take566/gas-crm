@@ -582,6 +582,34 @@ function testAddCustomer() {
 
 - 各ファイルを「Ctrl + S」または上部の💾アイコンをクリックして保存
 
+### 2.4 必要な OAuth スコープ
+
+`src/appsscript.json` でスコープを**明示宣言**しています。
+
+```json
+{
+  "timeZone": "Asia/Tokyo",
+  "dependencies": {},
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/spreadsheets.currentonly",
+    "https://www.googleapis.com/auth/script.container.ui"
+  ]
+}
+```
+
+`oauthScopes` を書くと Apps Script の自動スコープ検出は**上書きされ、宣言したものだけ**が承認時に要求されます。したがってコードが使う API とこの一覧は手で同期させる必要があります。対応は次のとおり。
+
+| スコープ | 必要とする API 呼び出し | 該当箇所 |
+|---|---|---|
+| `spreadsheets.currentonly` | `SpreadsheetApp.getActiveSpreadsheet()` / `getSheetByName` / `insertSheet` / `appendRow` / `getDataRange` / `getRange().setValue()` | `Utils.gs`, `Company.gs`, `Customer.gs` |
+| `script.container.ui` | `SpreadsheetApp.getUi()`、`ui.createMenu().addToUi()`、`ui.alert()`、`ui.showModalDialog()`、`HtmlService.createHtmlOutputFromFile()` | `Menu.gs` 全体 |
+
+`script.container.ui` はコンテナバインドスクリプトの UI（カスタムメニュー・モーダルダイアログ・サイドバー）に必要です。これが無いとメニュー表示やダイアログ起動が認可エラーになります。
+
+> **UI を伴う機能を追加したとき**（サイドバー、`ui.prompt` など）や、**新しい Google サービスを使い始めたとき**（`MailApp`、`DriveApp` など）は、この表と `oauthScopes` を必ず更新してください。既に承認済みのアカウントでは古いトークンが残っていて気付けないことがあるため、**別アカウントで承認し直して確認**するのが確実です。
+
 ---
 
 ## 3. HTMLダイアログの作成

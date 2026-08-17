@@ -60,16 +60,23 @@ function getCustomers() {
  * @return {Array} 検索結果の顧客配列
  */
 function searchCustomers(keyword) {
-  const lowerKeyword = normalizeCell(keyword).toLowerCase();
-  if (lowerKeyword === '') return [];
+  try {
+    const lowerKeyword = normalizeCell(keyword).toLowerCase();
+    if (lowerKeyword === '') return [];
 
-  // getCustomers の各項目は readRows で文字列に正規化済みのため、
-  // 数値だけの名前・電話番号が入っていても toLowerCase で落ちない
-  return getCustomers().filter(c =>
-    c.name.toLowerCase().includes(lowerKeyword) ||
-    c.companyName.toLowerCase().includes(lowerKeyword) ||
-    c.email.toLowerCase().includes(lowerKeyword)
-  );
+    // getCustomers の各項目は readRows で文字列に正規化済みのため、
+    // 数値だけの名前・電話番号が入っていても toLowerCase で落ちない
+    return getCustomers().filter(c =>
+      c.name.toLowerCase().includes(lowerKeyword) ||
+      c.companyName.toLowerCase().includes(lowerKeyword) ||
+      c.email.toLowerCase().includes(lowerKeyword)
+    );
+  } catch (error) {
+    // 他のサーバ関数と同じ方針で、ログに残したうえでクライアントへ投げ返す。
+    // ここで [] を返すと「0 件」と「失敗」が区別できなくなる
+    Logger.log('searchCustomers エラー: ' + error.toString());
+    throw new Error('顧客の検索に失敗しました: ' + error.toString());
+  }
 }
 
 /**

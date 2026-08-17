@@ -48,7 +48,9 @@ function makeEnv(sheets, options = {}) {
     },
     // GmailApp.search はスレッドの配列を返す想定だが、テストではスレッドの中身は
     // getMessagesForThreads 側に注入した options.gmailThreads で決めるので、
-    // search の戻り値はその件数だけ埋めたダミー配列でよい
+    // search の戻り値はその件数だけ埋めたダミー配列でよい。
+    // 実 GmailMessage に isSent() は存在しない（#15 の実機検証で発覚したバグ）。
+    // from を省略したメッセージは自分からの送信として扱う。
     GmailApp: {
       search: (query, start, max) => {
         gmailSearchCalls.push({ query, start, max });
@@ -56,7 +58,8 @@ function makeEnv(sheets, options = {}) {
       },
       getMessagesForThreads: () => (options.gmailThreads || []).map(messages =>
         messages.map(m => ({
-          isSent: () => m.isSent !== false,
+          isDraft: () => !!m.isDraft,
+          getFrom: () => m.from !== undefined ? m.from : (options.myEmail ?? 'me@example.co.jp'),
           getTo: () => m.to || '',
           getCc: () => m.cc || ''
         }))
@@ -70,7 +73,10 @@ function makeEnv(sheets, options = {}) {
         return `${y}/${m}/${d}`;
       }
     },
-    Session: { getScriptTimeZone: () => 'Asia/Tokyo' },
+    Session: {
+      getScriptTimeZone: () => 'Asia/Tokyo',
+      getActiveUser: () => ({ getEmail: () => options.myEmail ?? 'me@example.co.jp' })
+    },
     Logger: { log: m => logs.push(m) },
     Date
   };
@@ -316,6 +322,27 @@ section('#15-3 getGmailImportCandidates — 既存顧客の除外・重複排除
   check('重複する宛先は1件に集約', candidates.filter(c => c.email === 'shinki@example.co.jp').length, 1);
   check('会社ドメインが推測される', candidates.find(c => c.email === 'shinki@example.co.jp').companyGuess, 'example.co.jp');
   check('フリーメールは会社候補なし', candidates.find(c => c.email === 'hanako@gmail.com').companyGuess, '');
+}
+{
+  // GmailMessage に isSent() は存在しない。in:sent 検索でも相手からの返信メッセージが
+  // スレッドに混ざるため、from（送信者）で自分のメッセージだけを見分ける必要がある。
+  const { ctx } = makeEnv(
+    { '会社': [COMPANY_HEADER], '顧客': [CUSTOMER_HEADER] },
+    {
+      myEmail: 'me@example.co.jp',
+      gmailThreads: [[
+        { from: 'me@example.co.jp', to: '"相手太郎" <aite@example.co.jp>', cc: '' },        // 自分の送信 → 候補になる
+        { from: '"相手太郎" <aite@example.co.jp>', to: 'me@example.co.jp', cc: '' },          // 相手からの返信 → 無視される
+        { from: 'me@example.co.jp', to: 'sagen@example.co.jp', cc: '', isDraft: true },     // 下書き → 無視される
+        { from: 'me@example.co.jp', to: 'me@example.co.jp', cc: '' }                        // 自分自身への送信 → 候補にしない
+      ]]
+    }
+  );
+  const candidates = ctx.getGmailImportCandidates(30, 50);
+  check('自分が送信したメッセージの宛先だけが候補になる', candidates.map(c => c.email), ['aite@example.co.jp']);
+  check('相手からの返信は候補に混入しない（自分のアドレスが出ない）',
+    candidates.some(c => c.email === 'me@example.co.jp'), false);
+  check('下書きの宛先は候補に含まれない', candidates.some(c => c.email === 'sagen@example.co.jp'), false);
 }
 {
   // clampNumber の丸めと GmailApp.search への引数伝播を別ケースで確認

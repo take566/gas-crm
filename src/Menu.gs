@@ -15,6 +15,8 @@ function onOpen() {
       .addSeparator()
       .addItem('顧客を検索', 'showSearchDialog')
       .addSeparator()
+      .addItem('Gmail送信履歴から取り込み', 'showImportFromGmailDialog')
+      .addSeparator()
       .addItem('会社IDを割り当て', 'showAssignCompanyIdsDialog')
       .addItem('顧客IDを割り当て', 'showAssignCustomerIdsDialog')
       .addSeparator()
@@ -72,6 +74,16 @@ function showSearchDialog() {
     .setWidth(500)
     .setHeight(400);
   SpreadsheetApp.getUi().showModalDialog(html, '顧客を検索');
+}
+
+/**
+ * Gmail 送信履歴取り込みダイアログを表示
+ */
+function showImportFromGmailDialog() {
+  const html = HtmlService.createHtmlOutputFromFile('html/ImportFromGmailDialog')
+    .setWidth(700)
+    .setHeight(500);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Gmail送信履歴から取り込み');
 }
 
 /**

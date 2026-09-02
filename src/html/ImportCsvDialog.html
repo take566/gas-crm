@@ -136,10 +136,19 @@
     /**
      * @param {Array<string>} [mapping] - 手動で変更したマッピング。省略時はサーバが自動推定する
      */
+    // google.script.run に渡せるサイズには限りがあり、超えるとハンドラが呼ばれず
+    // ダイアログが無反応になる。サーバへ送る前にここで止めて理由を伝える。
+    var MAX_TEXT_LENGTH = 1000000;
+
     function preview(mapping) {
       var text = document.getElementById('csvText').value;
       if (!text.trim()) {
         setStatus('CSV が空です。ファイルを選ぶか、貼り付けてください。', 'error');
+        return;
+      }
+      if (text.length > MAX_TEXT_LENGTH) {
+        setStatus('CSV が大きすぎます（' + text.length.toLocaleString() + ' 文字）。'
+          + MAX_TEXT_LENGTH.toLocaleString() + ' 文字以内に分割してください。', 'error');
         return;
       }
 

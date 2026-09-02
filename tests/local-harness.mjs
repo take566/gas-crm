@@ -519,12 +519,12 @@ section('#23-3 buildCsvImportPreview — 必須の欠落と重複の検出');
   // 上限を超える CSV は先頭だけ返し、総行数を添えて知らせる
   const { ctx } = makeEnv({ '会社': [COMPANY_HEADER], '顧客': [CUSTOMER_HEADER] });
   const lines = ['会社名'];
-  for (let i = 0; i < 501; i++) lines.push('会社' + i);
+  for (let i = 0; i < 201; i++) lines.push('会社' + i);
   const preview = ctx.buildCsvImportPreview(lines.join('\n'), 'company');
-  check('返す行数は上限まで', preview.rows.length, 500);
-  check('総行数は実際の件数', preview.totalRows, 501);
+  check('返す行数は上限まで', preview.rows.length, 200);
+  check('総行数は実際の件数', preview.totalRows, 201);
   check('打ち切りを知らせる', preview.truncated, true);
-  check('上限値も返す', preview.maxRows, 500);
+  check('上限値も返す', preview.maxRows, 200);
 }
 {
   const { ctx } = makeEnv({ '会社': [COMPANY_HEADER], '顧客': [CUSTOMER_HEADER] });

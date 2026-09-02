@@ -23,6 +23,7 @@ crm/
 │   ├── Utils.gs                 # 設定・ヘルパー関数、ID自動採番
 │   ├── Company.gs               # 会社関連の関数
 │   ├── Customer.gs              # 顧客関連の関数
+│   ├── Gmail.gs                 # Gmail送信履歴からの顧客候補取り込み
 │   ├── Menu.gs                  # カスタムメニューとダイアログ表示
 │   ├── Test.gs                  # テスト用関数
 │   ├── appsscript.json          # GAS設定（タイムゾーン・OAuthスコープ）
@@ -36,6 +37,11 @@ crm/
 │   ├── gas-crm-implementation-guide.md
 │   ├── AGENTS.md
 │   └── CLAUDE.md
+├── terraform/                   # CRM 用 GCP プロジェクトの IaC（push 対象外）
+│   ├── main.tf                  # プロジェクト・API 有効化・ログ保持・IAM
+│   ├── variables.tf
+│   ├── outputs.tf
+│   └── README.md                # 適用手順と、Terraform で扱えない手動設定
 ├── .clasp.json                  # Clasp設定（rootDir: src、gitignore 対象）
 ├── .claspignore
 └── package.json                 # Node.js設定
@@ -44,7 +50,7 @@ crm/
 `clasp push` では `rootDir`（= `src`）の部分が取り除かれるため、Apps Script プロジェクト側のファイル名は次のようになります。
 
 ```
-Utils / Company / Customer / Menu / Test
+Utils / Company / Customer / Gmail / Menu / Test
 html/AddCompanyDialog / html/AddCustomerDialog / html/SearchDialog
 ```
 
@@ -134,6 +140,24 @@ npm test
    - 会社IDを割り当て
    - 顧客IDを割り当て
    - シートを初期化
+
+## GCP（Terraform）
+
+Apps Script は既定で「非表示の GCP プロジェクト」に自動で紐づく。この状態では有効な API も
+OAuth 同意画面もログの保持期間もコードに残らないため、CRM 専用の GCP プロジェクトを
+`terraform/` で定義している。
+
+```bash
+cd terraform
+cp terraform.example.tfvars terraform.tfvars   # project_id を一意な値に変える
+terraform init
+terraform plan
+terraform apply
+terraform output project_number                # Apps Script への紐付けに使う
+```
+
+OAuth 同意画面の設定と Apps Script への紐付けは Terraform では扱えないため手動で行う。
+手順は [terraform/README.md](terraform/README.md) を参照。
 
 ## 詳細ドキュメント
 

@@ -1,0 +1,14 @@
+# Terraform 作業ディレクトリ・プロバイダバイナリ
+.terraform/
+
+# state は local backend。認証情報やプロジェクト番号が入るため追跡しない
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+
+# 実値の tfvars は環境ごとに異なるため追跡しない（example のみ追跡する）
+*.tfvars
+!*.example.tfvars
+
+crash.log
+crash.*.log

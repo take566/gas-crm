@@ -34,8 +34,11 @@ resource "google_project" "crm" {
 
   labels = local.labels
 
-  # プロジェクト作成 API 自体を叩くための API。既定プロジェクトで有効化済みである前提
-  auto_create_network = false
+  # 既定の true のまま置く。false にするとプロバイダが default ネットワークを削除しようとして
+  # compute.googleapis.com を有効化しにいき、請求先アカウント未設定のプロジェクトでは
+  # 「Billing must be enabled for activation of service(s) 'compute.googleapis.com'」で失敗する。
+  # 新規プロジェクトでは Compute Engine API 自体が無効なため、true でも default VPC は作られない。
+  auto_create_network = true
 }
 
 # 有効化する API。

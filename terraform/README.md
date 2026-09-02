@@ -109,6 +109,11 @@ terraform output logs_url
 - **`deletion_policy` は既定で `PREVENT`。** CRM の実データに紐づくプロジェクトのため、
   `terraform destroy` は拒否される。本当に消すときだけ `terraform.tfvars` で
   `deletion_policy = "DELETE"` にしてから `apply` → `destroy` の順で実行する。
+- **`auto_create_network` は `true`（既定）のまま。** `false` にするとプロバイダが default
+  ネットワークを削除するために Compute Engine API を有効化しにいき、請求先アカウントが
+  未設定のプロジェクトでは `Billing must be enabled for activation of service(s)
+  'compute.googleapis.com'` で `apply` が失敗する。新規プロジェクトでは Compute Engine API
+  自体が無効なため、`true` でも default VPC は作られない。
 - **`_Default` ログバケットは plan 上「作成」と表示される。** 実際にはプロジェクト作成時に
   自動生成されたバケットを取得して更新する（プロバイダの acquire-or-create 動作）。
 - **`log_retention_days` の無料枠は 30 日。** 伸ばすと課金対象になる。請求先アカウントを

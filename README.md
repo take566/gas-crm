@@ -156,8 +156,9 @@ terraform apply
 terraform output project_number                # Apps Script への紐付けに使う
 ```
 
-OAuth 同意画面の設定と Apps Script への紐付けは Terraform では扱えないため手動で行う。
-手順は [terraform/README.md](terraform/README.md) を参照。
+OAuth 同意画面の設定と Apps Script への紐付けは Terraform では扱えないため手動で行う
+（2026-09-02 に設定済み）。手順と、実際に踏んだ落とし穴（紐付けは取り消せない・
+スクリプトがゴミ箱にあると設定できない）は [terraform/README.md](terraform/README.md) を参照。
 
 ## 詳細ドキュメント
 

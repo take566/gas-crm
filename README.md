@@ -14,6 +14,7 @@ Google スプレッドシートと Google Apps Script を使用して、会社�
 - 顧客検索機能
 - 未採番行への ID 割り当て（既存 ID の最大値の次から連番。**欠番は埋めません**）
 - Gmail送信履歴からの顧客候補取り込み（会社名は送信先ドメインからの推測。要確認・編集）
+- CSV からの会社・顧客の取り込み（列の自動対応付け、必須欠落・重複の検出、UTF-8 / Shift_JIS）
 
 ## プロジェクト構成
 
@@ -24,12 +25,15 @@ crm/
 │   ├── Company.gs               # 会社関連の関数
 │   ├── Customer.gs              # 顧客関連の関数
 │   ├── Gmail.gs                 # Gmail送信履歴からの顧客候補取り込み
+│   ├── Csv.gs                   # CSV 取り込み（ETL: パース・列の対応付け・登録）
 │   ├── Menu.gs                  # カスタムメニューとダイアログ表示
 │   ├── Test.gs                  # テスト用関数
 │   ├── appsscript.json          # GAS設定（タイムゾーン・OAuthスコープ）
 │   └── html/                    # HTMLダイアログ
 │       ├── AddCompanyDialog.html
 │       ├── AddCustomerDialog.html
+│       ├── ImportFromGmailDialog.html
+│       ├── ImportCsvDialog.html
 │       └── SearchDialog.html
 ├── tests/                       # push 対象外
 │   └── local-harness.mjs        # GAS API をスタブしたロジック検証（npm test）
@@ -50,8 +54,9 @@ crm/
 `clasp push` では `rootDir`（= `src`）の部分が取り除かれるため、Apps Script プロジェクト側のファイル名は次のようになります。
 
 ```
-Utils / Company / Customer / Gmail / Menu / Test
-html/AddCompanyDialog / html/AddCustomerDialog / html/SearchDialog
+Utils / Company / Customer / Gmail / Csv / Menu / Test
+html/AddCompanyDialog / html/AddCustomerDialog / html/ImportFromGmailDialog
+html/ImportCsvDialog / html/SearchDialog
 ```
 
 `Menu.gs` の `HtmlService.createHtmlOutputFromFile('html/AddCompanyDialog')` はこの名前を参照しています。**GAS のソースは `src/` 配下のみが正**です。リポジトリ直下に `.gs` を置くと同名関数が二重に push され、GAS は全ファイルを単一のグローバルスコープに展開するため後勝ちでサイレントに壊れます。
@@ -137,9 +142,30 @@ npm test
    - 会社を追加
    - 顧客を追加
    - 顧客を検索
+   - Gmail送信履歴から取り込み
+   - CSVから取り込み
    - 会社IDを割り当て
    - 顧客IDを割り当て
    - シートを初期化
+
+### CSV から取り込む
+
+「CSVから取り込み」ダイアログの流れ。
+
+1. 取り込み先（会社 / 顧客）と文字コードを選び、CSV ファイルを選択するか本文を貼り付ける
+   - 文字コードの既定は「自動判定」。UTF-8 で読んで文字化けしたら Shift_JIS で読み直す
+     （Excel が書き出す CSV は Shift_JIS が多いため）
+2. ［プレビュー］を押すと、1 行目のヘッダーから列の対応が推定される
+   - 「取引先」「TEL」「E-Mail」のような別名にも対応する。合っていなければ対応表の
+     プルダウンで変更できる（変更するとプレビューが再計算される）
+   - **会社ID・顧客ID・作成日時の列は取り込まない。** ID は登録時に自動採番される
+3. 必須項目が空の行、既に登録済みの行、CSV 内で重複する行には確認の印が付き、
+   チェックが外れた状態で表示される
+4. ［選択した行を登録］でチェックの付いた行だけを登録する。行ごとに独立して処理するため、
+   一部が失敗しても残りは登録される
+
+1 回に取り込めるのは 500 行まで。超える場合は分割してください。既存行の更新（UPSERT）には
+対応しておらず、常に新規行として追加します。
 
 ## GCP（Terraform）
 

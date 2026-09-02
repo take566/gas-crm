@@ -1,5 +1,3 @@
-| `oauthScopes` を増やしたら `terraform/variables.tf` の `enabled_services` も見直す | GCP プロジェクト側で対応する API が無効だと、同意画面を通っても実行時に権限エラーで落ちる |
-| GCP の設定変更はコンソールで直接行わず `terraform/` に書いて `apply` する | コンソールで直接変えると次の `terraform apply` で巻き戻る。Terraform で扱えない OAuth 同意画面と Apps Script の紐付けだけは例外で、手順は `terraform/README.md` にある |
 # エージェント向けメモ
 
 このリポジトリで作業するときの約束事。人間が読んでも困らない程度に短くしてある。

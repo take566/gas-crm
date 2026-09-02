@@ -23,6 +23,7 @@ crm/
 │   ├── Utils.gs                 # 設定・ヘルパー関数、ID自動採番
 │   ├── Company.gs               # 会社関連の関数
 │   ├── Customer.gs              # 顧客関連の関数
+│   ├── Gmail.gs                 # Gmail送信履歴からの顧客候補取り込み
 │   ├── Menu.gs                  # カスタムメニューとダイアログ表示
 │   ├── Test.gs                  # テスト用関数
 │   ├── appsscript.json          # GAS設定（タイムゾーン・OAuthスコープ）
@@ -49,7 +50,7 @@ crm/
 `clasp push` では `rootDir`（= `src`）の部分が取り除かれるため、Apps Script プロジェクト側のファイル名は次のようになります。
 
 ```
-Utils / Company / Customer / Menu / Test
+Utils / Company / Customer / Gmail / Menu / Test
 html/AddCompanyDialog / html/AddCustomerDialog / html/SearchDialog
 ```
 

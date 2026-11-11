@@ -2,6 +2,10 @@
 
 Google Apps Script（GAS）を使用したシンプルなCRMシステムです。
 
+## CI
+
+PR と master への push で、GitHub Actions の `ci`（`.github/workflows/ci.yml`、hosted の ubuntu-latest）が `node tests/local-harness.mjs` を回す。GitHub 側の課金が止まると `ci` は起動できずに落ちる。それはコードの問題ではない。手元では `npm test`（同じ `node tests/local-harness.mjs`）で同じ検査ができる。
+
 ## 概要
 
 Google スプレッドシートと Google Apps Script を使用して、会社情報と顧客情報を管理するシステムです。

@@ -1,0 +1,35 @@
+name: CI
+
+# PR と master への push で、GAS ロジックの検証ハーネス (npm test = node tests/local-harness.mjs) を回す
+# (Refs Deploy-inc/hermes-agent-config#599)。依存パッケージは不要 (clasp は入れない)。secret は使わない。
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Harness
+        run: node tests/local-harness.mjs

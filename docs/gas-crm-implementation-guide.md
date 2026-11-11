@@ -87,6 +87,7 @@ clone 直後のセットアップは [README](../README.md#3-認証とプロジ�
 | [`src/Company.gs`](../src/Company.gs) | 会社の追加・取得 | `addCompany` / `getCompanies` / `getCompanyById` / `getCompanyIdByName` / `assignMissingCompanyIds` |
 | [`src/Customer.gs`](../src/Customer.gs) | 顧客の追加・取得・検索 | `addCustomer` / `getCustomers` / `searchCustomers` / `getCustomersByCompanyId` / `assignMissingCustomerIds` |
 | [`src/Gmail.gs`](../src/Gmail.gs) | Gmail 送信履歴からの顧客候補抽出・取り込み | `getGmailImportCandidates` / `importSelectedGmailContacts` / `guessCompanyFromEmail` / `parseRecipientList` |
+| [`src/Csv.gs`](../src/Csv.gs) | CSV の取り込み（ETL） | `parseCsv` / `buildCsvMapping` / `buildCsvImportPreview` / `importCsvRows` / `getCsvImportTarget` |
 | [`src/Menu.gs`](../src/Menu.gs) | カスタムメニューとダイアログ表示 | `onOpen` / `initializeSheets` / `show*Dialog` / `formatAssignResult` |
 | [`src/Test.gs`](../src/Test.gs) | 手動スモークテスト（**実シートに書き込む**） | `DEV_testAddCompany` / `DEV_testAddCustomer` |
 | [`src/html/`](../src/html) | 入力・検索ダイアログ | — |
@@ -127,6 +128,23 @@ clone 直後のセットアップは [README](../README.md#3-認証とプロジ�
 `FREE_EMAIL_DOMAINS`（Gmail/Yahoo!等）はそもそも候補を出しません。取り込みダイアログで
 必ずユーザーに確認・編集させ、`addCompany` をそのまま呼ぶことで既存の正規化・採番・
 ロックのロジックに乗せています（Gmail 用に別ロジックを作らない）。
+
+**外部データの取り込みは必ず `addCompany` / `addCustomer` を通す**
+
+Gmail 取り込みも CSV 取り込みも、最後は既存の追加関数を呼びます。取り込み口ごとに
+書き込みを実装すると、正規化・採番・ドキュメントロックが 3 か所に分散し、片方だけ
+直したときに静かに壊れます。取り込み側の責務は「候補を組み立てて人に確認させる」まで。
+
+そのため CSV に会社ID・顧客ID・作成日時の列があっても取り込みません。ID は採番ロジックが
+振り、作成日時は登録時刻を入れます。CSV の会社名は `getCompanyIdByName` で会社ID へ
+解決し、無ければ `addCompany` で作ります（Gmail 取り込みと同じ）。
+
+**CSV の文字コード変換はクライアント側で行う**
+
+`Csv.gs` が受け取るのは変換済みのテキストです。Excel が書き出す CSV は Shift_JIS が
+多く、GAS 側に文字列として届いた時点では化けを直せないため、ダイアログの `FileReader`
+で読む段階に文字コードの選択を置いています（既定は自動判定＝ UTF-8 で読んで置換文字が
+出たら Shift_JIS で読み直す）。
 
 ### 2.4 必要な OAuth スコープ
 
@@ -175,7 +193,7 @@ clone 直後のセットアップは [README](../README.md#3-認証とプロジ�
 
 ## 3. HTMLダイアログ
 
-`src/html/` に 3 つあります。サーバ側関数は `google.script.run` 経由で呼びます。
+`src/html/` に 5 つあります。サーバ側関数は `google.script.run` 経由で呼びます。
 
 | ファイル | 呼ぶサーバ関数 |
 |---|---|
@@ -183,6 +201,7 @@ clone 直後のセットアップは [README](../README.md#3-認証とプロジ�
 | [`AddCustomerDialog.html`](../src/html/AddCustomerDialog.html) | `getCompanies()`（会社プルダウン）、`addCustomer(name, companyId, email, phone, note)` |
 | [`SearchDialog.html`](../src/html/SearchDialog.html) | `searchCustomers(keyword)` |
 | [`ImportFromGmailDialog.html`](../src/html/ImportFromGmailDialog.html) | `getGmailImportCandidates(days, maxThreads)`、`importSelectedGmailContacts(rows)` |
+| [`ImportCsvDialog.html`](../src/html/ImportCsvDialog.html) | `buildCsvImportPreview(text, target, mapping)`、`importCsvRows(target, rows)` |
 
 `Menu.gs` からは `HtmlService.createHtmlOutputFromFile('html/AddCompanyDialog')` の
 ように、**push 後のファイル名**（`src/` が取り除かれた名前）で参照します。
@@ -250,7 +269,18 @@ clone 直後のセットアップは [README](../README.md#3-認証とプロジ�
 5. チェックを付けて「選択した行を登録」→ 会社・顧客が追加されることを確認
 6. 再度開くと、登録済みの相手が候補から消えていることを確認
 
-### 4.7 ロジックのローカル検証
+### 4.7 CSV からの取り込み
+
+1. 「🗂️ CRM」→「CSVから取り込み」
+2. 取り込み先（会社 / 顧客）を選び、CSV ファイルを選ぶか本文を貼り付ける
+3. ［プレビュー］で列の対応が推定されること、プルダウンで変更すると再計算されることを確認
+4. 必須が空の行・登録済みの行・CSV 内で重複する行に確認の印が付き、チェックが
+   外れた状態で表示されることを確認
+5. ［選択した行を登録］→ 会社・顧客が追加されることを確認
+6. Shift_JIS の CSV（Excel で「CSV UTF-8」以外で保存したもの）で日本語が化けないことを確認
+7. 再度プレビューすると、登録済みの行に重複の印が付くことを確認
+
+### 4.8 ロジックのローカル検証
 
 シートに触らずに列マッピング・正規化・結合・採番を確認できます。
 
@@ -280,14 +310,17 @@ crm/
 │   ├── Menu.gs
 │   ├── Test.gs
 │   ├── Gmail.gs
+│   ├── Csv.gs
 │   ├── appsscript.json
 │   └── html/
 │       ├── AddCompanyDialog.html
 │       ├── AddCustomerDialog.html
 │       ├── SearchDialog.html
-│       └── ImportFromGmailDialog.html
+│       ├── ImportFromGmailDialog.html
+│       └── ImportCsvDialog.html
 ├── tests/
 │   └── local-harness.mjs        # npm test
+├── terraform/                   # CRM 用 GCP プロジェクトの IaC
 ├── docs/
 │   ├── gas-crm-implementation-guide.md
 │   ├── AGENTS.md
@@ -308,11 +341,13 @@ CRM
 ├── Menu.gs
 ├── Test.gs
 ├── Gmail.gs
+├── Csv.gs
 └── html/
     ├── AddCompanyDialog.html
     ├── AddCustomerDialog.html
     ├── SearchDialog.html
-    └── ImportFromGmailDialog.html
+    ├── ImportFromGmailDialog.html
+    └── ImportCsvDialog.html
 ```
 
 ---

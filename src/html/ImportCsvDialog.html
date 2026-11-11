@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 10px; }
+    .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+    .row label { font-size: 12px; }
+    button {
+      background-color: #4285f4;
+      color: white;
+      padding: 8px 15px;
+      border: none;
+      cursor: pointer;
+    }
+    button:disabled { background-color: #aaa; cursor: default; }
+    textarea {
+      width: 100%;
+      box-sizing: border-box;
+      font-family: monospace;
+      font-size: 12px;
+      padding: 6px;
+    }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #ddd; padding: 5px; text-align: left; font-size: 12px; vertical-align: middle; }
+    th { background-color: #4285f4; color: white; }
+    tr:nth-child(even) { background-color: #f9f9f9; }
+    tr.has-issue { background-color: #fff4e5; }
+    select { font-size: 12px; padding: 2px; }
+    .note { color: #666; font-size: 11px; }
+    .warn { color: #b06000; font-size: 12px; }
+    .error { color: #c5221f; }
+    .issue { color: #b06000; font-size: 11px; }
+    .result-ok { color: #188038; }
+    .result-ng { color: #c5221f; }
+    h3 { font-size: 13px; margin: 14px 0 4px; }
+  </style>
+</head>
+<body>
+  <div class="row">
+    <label>取り込み先:</label>
+    <label><input type="radio" name="target" value="customer" checked> 顧客</label>
+    <label><input type="radio" name="target" value="company"> 会社</label>
+    <label>文字コード:</label>
+    <select id="encoding">
+      <option value="auto">自動判定</option>
+      <option value="UTF-8">UTF-8</option>
+      <option value="Shift_JIS">Shift_JIS</option>
+    </select>
+    <input type="file" id="file" accept=".csv,text/csv,text/plain">
+  </div>
+
+  <p class="note">
+    ファイルを選ぶか、下のボックスに CSV を貼り付けて［プレビュー］を押します。1 行目はヘッダー行として扱います。
+    会社ID・顧客ID・作成日時の列があっても取り込みません（ID は登録時に自動採番します）。
+  </p>
+
+  <textarea id="csvText" rows="4" placeholder="会社名,住所,電話番号"></textarea>
+
+  <div class="row">
+    <button id="previewButton" onclick="preview()">プレビュー</button>
+    <button id="importButton" onclick="importSelected()" disabled>選択した行を登録</button>
+    <span id="status" class="note"></span>
+  </div>
+
+  <div id="mapping"></div>
+  <div id="results"></div>
+
+  <script>
+    var lastPreview = null;
+
+    document.getElementById('file').addEventListener('change', function (event) {
+      var file = event.target.files && event.target.files[0];
+      if (!file) return;
+      readFile(file, document.getElementById('encoding').value, function (text, usedEncoding) {
+        document.getElementById('csvText').value = text;
+        setStatus(file.name + ' を読み込みました（' + usedEncoding + '）。［プレビュー］を押してください。', 'note');
+      });
+    });
+
+    /**
+     * ファイルを指定の文字コードで読む。
+     * 'auto' はまず UTF-8 で読み、置換文字（U+FFFD）が出たら Shift_JIS で読み直す。
+     * Excel が書き出す CSV は Shift_JIS が多く、UTF-8 で読むと日本語が化けるため。
+     */
+    function readFile(file, encoding, callback) {
+      readAs(file, encoding === 'auto' ? 'UTF-8' : encoding, function (text) {
+        if (encoding === 'auto' && text.indexOf(String.fromCharCode(0xFFFD)) !== -1) {
+          readAs(file, 'Shift_JIS', function (sjis) { callback(sjis, 'Shift_JIS'); });
+          return;
+        }
+        callback(text, encoding === 'auto' ? 'UTF-8' : encoding);
+      });
+    }
+
+    function readAs(file, encoding, callback) {
+      var reader = new FileReader();
+      reader.onload = function () { callback(String(reader.result || '')); };
+      reader.onerror = function () { setStatus('ファイルの読み込みに失敗しました。', 'error'); };
+      reader.readAsText(file, encoding);
+    }
+
+    function selectedTarget() {
+      var radios = document.getElementsByName('target');
+      for (var i = 0; i < radios.length; i++) {
+        if (radios[i].checked) return radios[i].value;
+      }
+      return 'customer';
+    }
+
+    function setStatus(text, className) {
+      var status = document.getElementById('status');
+      status.className = className || 'note';
+      status.textContent = text;
+    }
+
+    function setBusy(isBusy) {
+      document.getElementById('previewButton').disabled = isBusy;
+      document.getElementById('importButton').disabled = isBusy || !hasCheckedRow();
+    }
+
+    function hasCheckedRow() {
+      var boxes = document.querySelectorAll('.row-checkbox');
+      for (var i = 0; i < boxes.length; i++) {
+        if (boxes[i].checked) return true;
+      }
+      return false;
+    }
+
+    function clear(id) {
+      var el = document.getElementById(id);
+      el.textContent = '';
+      return el;
+    }
+
+    /**
+     * @param {Array<string>} [mapping] - 手動で変更したマッピング。省略時はサーバが自動推定する
+     */
+    // google.script.run に渡せるサイズには限りがあり、超えるとハンドラが呼ばれず
+    // ダイアログが無反応になる。サーバへ送る前にここで止めて理由を伝える。
+    var MAX_TEXT_LENGTH = 1000000;
+
+    function preview(mapping) {
+      var text = document.getElementById('csvText').value;
+      if (!text.trim()) {
+        setStatus('CSV が空です。ファイルを選ぶか、貼り付けてください。', 'error');
+        return;
+      }
+      if (text.length > MAX_TEXT_LENGTH) {
+        setStatus('CSV が大きすぎます（' + text.length.toLocaleString() + ' 文字）。'
+          + MAX_TEXT_LENGTH.toLocaleString() + ' 文字以内に分割してください。', 'error');
+        return;
+      }
+
+      setBusy(true);
+      setStatus('読み込み中…', 'note');
+      google.script.run
+        .withSuccessHandler(function (result) {
+          setBusy(false);
+          lastPreview = result;
+          renderMapping(result);
+          renderRows(result);
+        })
+        .withFailureHandler(function (error) {
+          setBusy(false);
+          clear('mapping');
+          clear('results');
+          setStatus(error && error.message ? error.message : String(error), 'error');
+        })
+        .buildCsvImportPreview(text, selectedTarget(), mapping || null);
+    }
+
+    function renderMapping(result) {
+      var div = clear('mapping');
+
+      var heading = document.createElement('h3');
+      heading.textContent = '列の対応（自動推定。必要なら変更してください）';
+      div.appendChild(heading);
+
+      var table = document.createElement('table');
+      var headerRow = document.createElement('tr');
+      ['CSV の列', '取り込み先の項目'].forEach(function (label) {
+        var th = document.createElement('th');
+        th.textContent = label;
+        headerRow.appendChild(th);
+      });
+      table.appendChild(headerRow);
+
+      result.headers.forEach(function (header, index) {
+        var tr = document.createElement('tr');
+
+        var headerCell = document.createElement('td');
+        headerCell.textContent = header || '(列 ' + (index + 1) + ')';
+        tr.appendChild(headerCell);
+
+        var selectCell = document.createElement('td');
+        var select = document.createElement('select');
+        select.className = 'mapping-select';
+        select.dataset.index = String(index);
+
+        var skip = document.createElement('option');
+        skip.value = '';
+        skip.textContent = '（取り込まない）';
+        select.appendChild(skip);
+
+        result.fields.forEach(function (field) {
+          var option = document.createElement('option');
+          option.value = field.key;
+          option.textContent = field.label + (field.required ? '（必須）' : '');
+          select.appendChild(option);
+        });
+
+        select.value = result.mapping[index] || '';
+        select.addEventListener('change', onMappingChange);
+        selectCell.appendChild(select);
+        tr.appendChild(selectCell);
+
+        table.appendChild(tr);
+      });
+
+      div.appendChild(table);
+
+      if (result.unmappedRequired && result.unmappedRequired.length) {
+        var warn = document.createElement('p');
+        warn.className = 'warn';
+        warn.textContent = '必須項目「' + result.unmappedRequired.join('」「')
+          + '」に対応する列がありません。上の対応表で列を選んでください。';
+        div.appendChild(warn);
+      }
+    }
+
+    /**
+     * 同じ項目を 2 つの列に割り当てると後の列が勝ってしまうため、
+     * 変更した列以外で同じ項目を選んでいる列は「取り込まない」に戻す。
+     */
+    function onMappingChange(event) {
+      var changed = event.target;
+      var selects = document.querySelectorAll('.mapping-select');
+      var mapping = [];
+      for (var i = 0; i < selects.length; i++) {
+        if (selects[i] !== changed && changed.value && selects[i].value === changed.value) {
+          selects[i].value = '';
+        }
+        mapping.push(selects[i].value);
+      }
+      preview(mapping);
+    }
+
+    function renderRows(result) {
+      var div = clear('results');
+
+      var heading = document.createElement('h3');
+      heading.textContent = result.targetLabel + 'として取り込む行';
+      div.appendChild(heading);
+
+      if (result.truncated) {
+        var truncated = document.createElement('p');
+        truncated.className = 'warn';
+        truncated.textContent = 'CSV に ' + result.totalRows + ' 行ありますが、1 回に取り込めるのは '
+          + result.maxRows + ' 行までです。先頭 ' + result.maxRows
+          + ' 行だけ表示しています。残りは分割して取り込んでください。';
+        div.appendChild(truncated);
+      }
+
+      if (!result.rows.length) {
+        var empty = document.createElement('p');
+        empty.className = 'note';
+        empty.textContent = 'ヘッダー行だけで、取り込めるデータ行がありません。';
+        div.appendChild(empty);
+        document.getElementById('importButton').disabled = true;
+        return;
+      }
+
+      var table = document.createElement('table');
+      var headerRow = document.createElement('tr');
+      var labels = ['', '行'].concat(result.fields.map(function (f) { return f.label; })).concat(['確認']);
+      labels.forEach(function (label) {
+        var th = document.createElement('th');
+        th.textContent = label;
+        headerRow.appendChild(th);
+      });
+      table.appendChild(headerRow);
+
+      result.rows.forEach(function (row, index) {
+        var tr = document.createElement('tr');
+        if (row.issues.length) tr.className = 'has-issue';
+
+        var checkboxCell = document.createElement('td');
+        var checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'row-checkbox';
+        checkbox.dataset.index = String(index);
+        // 確認事項のある行は既定で外しておく（重複登録の事故を防ぐ）
+        checkbox.checked = row.issues.length === 0;
+        checkbox.addEventListener('change', function () {
+          document.getElementById('importButton').disabled = !hasCheckedRow();
+        });
+        checkboxCell.appendChild(checkbox);
+        tr.appendChild(checkboxCell);
+
+        // 確認事項のある行を CSV 側で直せるよう行番号を出す。
+        // 1 行目はヘッダーなのでデータ 0 番目は 2 行目。ただし parseCsv が空行を
+        // 落とすため、元ファイルに空行があるとその分だけ小さい番号になる。
+        var lineCell = document.createElement('td');
+        lineCell.textContent = String(row.index + 2);
+        tr.appendChild(lineCell);
+
+        result.fields.forEach(function (field) {
+          var td = document.createElement('td');
+          td.textContent = row.values[field.key] || '';
+          tr.appendChild(td);
+        });
+
+        var issueCell = document.createElement('td');
+        issueCell.className = 'issue';
+        issueCell.textContent = row.issues.join(' / ');
+        tr.appendChild(issueCell);
+
+        table.appendChild(tr);
+      });
+
+      div.appendChild(table);
+
+      var summary = document.createElement('p');
+      summary.className = 'note';
+      var issueCount = result.rows.filter(function (r) { return r.issues.length > 0; }).length;
+      summary.textContent = result.rows.length + ' 行を読み込みました。'
+        + (issueCount ? '確認事項のある ' + issueCount + ' 行はチェックを外してあります。' : '');
+      div.appendChild(summary);
+
+      document.getElementById('importButton').disabled = !hasCheckedRow();
+      setStatus('', 'note');
+    }
+
+    function importSelected() {
+      if (!lastPreview) return;
+
+      var rows = [];
+      var boxes = document.querySelectorAll('.row-checkbox');
+      for (var i = 0; i < boxes.length; i++) {
+        if (boxes[i].checked) rows.push(lastPreview.rows[Number(boxes[i].dataset.index)].values);
+      }
+      if (!rows.length) return;
+
+      setBusy(true);
+      setStatus(rows.length + ' 行を登録中…', 'note');
+      google.script.run
+        .withSuccessHandler(function (results) {
+          setBusy(false);
+          renderResults(results);
+        })
+        .withFailureHandler(function (error) {
+          setBusy(false);
+          setStatus('登録に失敗しました: ' + (error && error.message ? error.message : String(error)), 'error');
+        })
+        .importCsvRows(lastPreview.target, rows);
+    }
+
+    function renderResults(results) {
+      var div = clear('results');
+      var list = results || [];
+      var okCount = list.filter(function (r) { return r.success; }).length;
+
+      var summary = document.createElement('p');
+      summary.textContent = list.length + ' 行のうち ' + okCount + ' 行を登録しました。';
+      div.appendChild(summary);
+
+      var ul = document.createElement('ul');
+      list.forEach(function (r) {
+        var li = document.createElement('li');
+        li.className = r.success ? 'result-ok' : 'result-ng';
+        li.textContent = r.success
+          ? (r.name + ' を登録しました（ID: ' + r.id + '）')
+          : (r.name + ' の登録に失敗しました: ' + r.error);
+        ul.appendChild(li);
+      });
+      div.appendChild(ul);
+
+      var hint = document.createElement('p');
+      hint.className = 'note';
+      hint.textContent = '続けて取り込む場合は［プレビュー］を押し直してください（登録済みの行は重複として印が付きます）。';
+      div.appendChild(hint);
+
+      document.getElementById('importButton').disabled = true;
+      setStatus('', 'note');
+    }
+  </script>
+</body>
+</html>

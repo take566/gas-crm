@@ -27,6 +27,7 @@ brv curate "学んだこと: 判断・ファイルパス・理由" [-f path/to/f
 | UI や新しい Google サービスを使い始めたら `src/appsscript.json` の `oauthScopes` を更新する | `oauthScopes` を明示すると自動スコープ検出が上書きされる |
 | `oauthScopes` を増やしたら `terraform/variables.tf` の `enabled_services` も見直す | GCP プロジェクト側で対応する API が無効だと、同意画面を通っても実行時に権限エラーで落ちる |
 | GCP の設定変更はコンソールで直接せず `terraform/` に書いて `apply` する | コンソールで直接変えると次の `terraform apply` で巻き戻る。Terraform で扱えない OAuth 同意画面と Apps Script の紐付けだけが例外で、手順は `terraform/README.md` にある |
+| 外部データの取り込み（Gmail / CSV）は `addCompany` / `addCustomer` を経由する | 取り込み口ごとに書き込みを実装すると、正規化・採番・ロックが分散し、片方だけ直したときに静かに壊れる |
 | 採番を伴う書き込みは `withDocumentLock` で囲む | 「最大値を読む → 追加」の read-modify-write なので、同時実行で ID が重複する |
 | 変更したら `npm test` | `tests/local-harness.mjs` が GAS API をスタブしてロジックを検証する |
 | `clasp push` の前に `npx clasp status` | 送信されるファイル一覧を確認する |

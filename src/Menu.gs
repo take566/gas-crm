@@ -16,6 +16,7 @@ function onOpen() {
       .addItem('顧客を検索', 'showSearchDialog')
       .addSeparator()
       .addItem('Gmail送信履歴から取り込み', 'showImportFromGmailDialog')
+      .addItem('CSVから取り込み', 'showImportCsvDialog')
       .addSeparator()
       .addItem('会社IDを割り当て', 'showAssignCompanyIdsDialog')
       .addItem('顧客IDを割り当て', 'showAssignCustomerIdsDialog')
@@ -84,6 +85,18 @@ function showImportFromGmailDialog() {
     .setWidth(700)
     .setHeight(500);
   SpreadsheetApp.getUi().showModalDialog(html, 'Gmail送信履歴から取り込み');
+}
+
+/**
+ * CSV 取り込みダイアログを表示
+ *
+ * マッピング表とプレビュー表を横に並べるため、他のダイアログより広く取る。
+ */
+function showImportCsvDialog() {
+  const html = HtmlService.createHtmlOutputFromFile('html/ImportCsvDialog')
+    .setWidth(880)
+    .setHeight(620);
+  SpreadsheetApp.getUi().showModalDialog(html, 'CSVから取り込み');
 }
 
 /**
